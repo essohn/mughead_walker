@@ -8,9 +8,9 @@ import mughead_walker  # noqa: F401
 def test_num_payloads_zero():
     env = gym.make("MugheadWalker-v0", num_payloads=0)
     obs, _ = env.reset(seed=0)
-    assert obs[39] == 0.0
-    # First 16 payload slots all zero.
-    np.testing.assert_array_equal(obs[24:40], np.zeros(16, dtype=np.float32))
+    assert obs[41] == 0.0  # was obs[39]
+    # Payload slots 26-41 all zero (shifted by +2 for waist slots at 24-25).
+    np.testing.assert_array_equal(obs[26:42], np.zeros(16, dtype=np.float32))
     assert len(env.unwrapped.payloads) == 0
     env.close()
 
@@ -18,11 +18,11 @@ def test_num_payloads_zero():
 def test_num_payloads_one():
     env = gym.make("MugheadWalker-v0", num_payloads=1)
     obs, _ = env.reset(seed=0)
-    assert obs[39] == pytest.approx(1.0 / 3.0)
-    # slot 0 populated, slots 1 and 2 zero.
-    assert obs[36] == 1.0
-    assert obs[37] == 0.0
-    assert obs[38] == 0.0
+    assert obs[41] == pytest.approx(1.0 / 3.0)  # was obs[39]
+    # in_cup slots: slot 0 populated, slots 1 and 2 zero.
+    assert obs[38] == 1.0   # was obs[36]
+    assert obs[39] == 0.0   # was obs[37]
+    assert obs[40] == 0.0   # was obs[38]
     env.close()
 
 
@@ -87,3 +87,24 @@ def test_payload_mass_ratio_nonpositive_rejected():
         gym.make("MugheadWalker-v0", payload_mass_ratio=0.0)
     with pytest.raises(ValueError):
         gym.make("MugheadWalker-v0", payload_mass_ratio=-0.05)
+
+
+# --- New tests for mug_inner_width (Step 7.5) ---
+
+def test_mug_inner_width_narrow():
+    env = gym.make("MugheadWalker-v0", mug_inner_width=30.0)
+    env.reset(seed=0)
+    env.close()  # should construct without error
+
+
+def test_mug_inner_width_wide():
+    env = gym.make("MugheadWalker-v0", mug_inner_width=100.0)
+    env.reset(seed=0)
+    env.close()
+
+
+def test_mug_inner_width_out_of_range_rejected():
+    with pytest.raises(ValueError):
+        gym.make("MugheadWalker-v0", mug_inner_width=5.0)
+    with pytest.raises(ValueError):
+        gym.make("MugheadWalker-v0", mug_inner_width=200.0)

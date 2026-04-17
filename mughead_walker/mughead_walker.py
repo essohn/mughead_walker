@@ -43,47 +43,55 @@ LIDAR_RANGE = 160 / SCALE
 
 INITIAL_RANDOM = 5
 
-# Mug geometry (unscaled units; Box2D fixtures use values divided by SCALE).
-# See docs/superpowers/specs/2026-04-17-mughead-walker-env-design.md §4.
-MUG_SLAB_HALF = (38.0, 1.5)       # half-width, half-height of bottom slab (76 x 3)
-MUG_SLAB_CENTER = (0.0, -11.0)
-MUG_WALL_HALF = (1.5, 16.0)        # half-width, half-height of walls (3 x 32)
-MUG_LEFT_CENTER = (-36.5, 6.0)
-MUG_RIGHT_CENTER = (36.5, 6.0)
-MUG_SLAB_BOTTOM_Y = -12.5          # unscaled; bottom of slab in hull local frame
+# --- Mug geometry (unscaled units; Box2D fixtures use values divided by SCALE) ---
+# MUG_INNER_WIDTH is now per-instance (self.mug_inner_width); default 50 set in __init__.
+# Spec §2.1: MUG_OUTER_WIDTH 80→60, wall thickness unchanged.
+MUG_OUTER_WIDTH = 60        # was 80
+MUG_WALL_T = 5              # wall thickness (unchanged)
+MUG_HEIGHT = 35             # total height of mug body (unscaled)
+MUG_SLAB_HALF_H = 1.5       # half-height of bottom slab
+MUG_WALL_HALF_H = 16.0      # half-height of walls
+MUG_SLAB_CENTER_Y = -11.0   # slab center in mug-local frame (unscaled)
+MUG_LEFT_CENTER_X = -27.5   # default for 50-wide interior; recomputed per instance
+MUG_RIGHT_CENTER_X = 27.5
+MUG_WALL_CENTER_Y = 6.0     # wall center-y in mug-local frame (unscaled)
 
-# Collision categories.
-CAT_TERRAIN = 0x0001
-CAT_LEG = 0x0020
-CAT_MUG = 0x0080
-CAT_PAYLOAD = 0x0040
+# --- Chassis (new body, spec §2.1) ---
+CHASSIS_W = 20        # width in physics units (unscaled)
+CHASSIS_H = 6         # height in physics units (unscaled)
+CHASSIS_DENSITY = 5.0  # match old hull density
+
+# --- Waist joint (new, spec §2.1) ---
+WAIST_TORQUE = 80     # = MOTORS_TORQUE (hip torque)
+WAIST_SPEED = 4.0     # = SPEED_HIP
+WAIST_LIMIT = math.pi / 4  # ±45 degrees
 
 # Original BipedalWalker hull had density 5.0 on a ~1.09 m^2 polygon.
-# Target mug mass ≈ 5.4. Total mug fixture area (in m^2) = (76*3 + 2*3*32) / SCALE^2 ≈ 0.467.
-# Default MUG_DENSITY ≈ 11.6 matches the original mass. Exposed for manual tuning.
+# Target mug mass ≈ 5.4. Adjusted density for narrower mug.
 MUG_DENSITY = 11.6
 
+# --- Collision categories (spec §2.3) ---
+CAT_TERRAIN = 0x0001
+CAT_LEG = 0x0020
+CAT_MUG = 0x0040
+CAT_CHASSIS = 0x0080   # NEW
+CAT_PAYLOAD = 0x0100   # shifted from 0x0040 to free up bits
+
 # Payload parameters (unscaled radius; see spec §4.2).
-PAYLOAD_RADIUS = 5.0
+PAYLOAD_RADIUS = 7.5
 PAYLOAD_FRICTION = 0.4
 PAYLOAD_LINEAR_DAMPING = 0.5
 DEFAULT_PAYLOAD_MASS_RATIO = 0.06
 DEFAULT_PAYLOAD_BOUNCINESS = 0.15
 DEFAULT_NUM_PAYLOADS = 3
 
-# Initial positions (hull local, unscaled) — vertical stack.
-PAYLOAD_INIT_POSITIONS = [
-    (0.3, -4.5),
-    (-0.2, 5.5),
-    (0.1, 15.5),
-]
-
 # Loss thresholds.
-LOSS_DISTANCE = 80.0 / SCALE   # Box2D meters from hull center
+LOSS_DISTANCE = 80.0 / SCALE   # Box2D meters from mug center
 LOSS_Y_BELOW_GROUND = 1.0 / SCALE  # drop below TERRAIN_HEIGHT by this much
 
-# Legs hang from the bottom of the mug slab.
-LEG_DOWN = MUG_SLAB_BOTTOM_Y / SCALE
+# Legs hang from the bottom of the chassis.
+# LEG_DOWN is the local anchor on chassis in world units (m).
+LEG_DOWN = -(CHASSIS_H / 2) / SCALE  # bottom of chassis
 LEG_W, LEG_H = 8 / SCALE, 34 / SCALE
 
 VIEWPORT_W = 600
@@ -92,9 +100,10 @@ VIEWPORT_H = 400
 TERRAIN_STEP = 14 / SCALE
 TERRAIN_LENGTH = 200  # in steps
 TERRAIN_HEIGHT = VIEWPORT_H / SCALE / 4
-TERRAIN_GRASS = 10  # low long are grass spots, in steps
+TERRAIN_GRASS = 10  # how long are grass spots, in steps
 TERRAIN_STARTPAD = 20  # in steps
 FRICTION = 2.5
+
 
 def _mug_fixture(half_size, center, density=MUG_DENSITY):
     hx, hy = half_size
@@ -108,13 +117,6 @@ def _mug_fixture(half_size, center, density=MUG_DENSITY):
         restitution=0.0,
     )
 
-
-def _build_mug_fixtures():
-    return [
-        _mug_fixture(MUG_SLAB_HALF, MUG_SLAB_CENTER),
-        _mug_fixture(MUG_WALL_HALF, MUG_LEFT_CENTER),
-        _mug_fixture(MUG_WALL_HALF, MUG_RIGHT_CENTER),
-    ]
 
 LEG_FD = fixtureDef(
     shape=polygonShape(box=(LEG_W / 2, LEG_H / 2)),
@@ -132,6 +134,12 @@ LOWER_FD = fixtureDef(
     maskBits=CAT_TERRAIN,
 )
 
+PAYLOAD_COLORS = [
+    ((220, 80, 80), (255, 255, 255)),
+    ((80, 180, 80), (255, 255, 255)),
+    ((80, 120, 220), (255, 255, 255)),
+]
+
 
 class ContactDetector(contactListener):
     def __init__(self, env):
@@ -140,11 +148,13 @@ class ContactDetector(contactListener):
 
     def BeginContact(self, contact):
         bodies = {contact.fixtureA.body, contact.fixtureB.body}
-        if self.env.hull in bodies:
-            # Payload-hull contact is normal (payload sitting in the cup); ignore it.
-            other = (bodies - {self.env.hull}).pop()
-            if other not in self.env.payloads:
-                self.env.game_over = True
+        # Check if chassis or mug contacts terrain (either triggers game_over).
+        if self.env.chassis in bodies or self.env.mug in bodies:
+            # Mug–payload contacts are expected (payload sitting in cup); ignore them.
+            other_bodies = bodies - {self.env.chassis, self.env.mug}
+            for other in other_bodies:
+                if other not in [p for p in self.env.payloads if p is not None]:
+                    self.env.game_over = True
         for leg in [self.env.legs[1], self.env.legs[3]]:
             if leg in [contact.fixtureA.body, contact.fixtureB.body]:
                 leg.ground_contact = True
@@ -161,51 +171,39 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
 
     MugheadWalker is a BipedalWalker variant built for the Yonsei
     "Understanding and Applying AI" RL competition. The walker's hull
-    is a U-shaped open-top "mug" that carries 3 free-body circular
-    payloads. Goal: walk forward as far as possible while keeping the
-    payloads in the mug.
+    is split into a chassis (pelvis, legs attach here) and a mug
+    (U-shaped open-top cup that holds payloads), connected by a
+    motorized revolute waist joint with ±π/4 limits.
+
+    Goal: walk forward as far as possible while keeping the payloads
+    in the mug.
 
     Forked from ``gymnasium.envs.box2d.bipedal_walker``. MIT licensed.
 
     ## Action Space
 
-    4-dim continuous ``[-1, 1]``: hip and knee torque for both legs.
+    5-dim continuous ``[-1, 1]``: hip/knee torque × 2 legs, plus waist torque.
 
     ## Observation Space
 
-    40-dim ``float32`` vector:
+    42-dim ``float32`` vector:
 
-    - ``obs[0:24]``: original BipedalWalker state (hull pose/velocity,
-      4 joint angles and speeds, 2 leg ground-contact flags, 10 LIDAR
-      measurements).
-    - ``obs[24:30]``: 3 × payload hull-local position ``(x, y) / 50``.
-    - ``obs[30:36]``: 3 × payload hull-local velocity ``(vx, vy) / 10``.
-    - ``obs[36:39]``: 3 × ``in_cup`` flag (0.0 or 1.0).
-    - ``obs[39]``: surviving payload count / 3.
-
-    Destroyed payload slots contribute zeros.
+    - ``obs[0:24]``: chassis pose/velocity, 4 joint angles/speeds, 2 contact
+      flags, 10 LIDAR measurements.
+    - ``obs[24]``: waist joint angle.
+    - ``obs[25]``: waist joint speed / SPEED_HIP.
+    - ``obs[26:32]``: 3 × payload mug-local position ``(x, y) / 50``.
+    - ``obs[32:38]``: 3 × payload mug-local velocity ``(vx, vy) / 10``.
+    - ``obs[38:41]``: 3 × ``in_cup`` flag (0.0 or 1.0).
+    - ``obs[41]``: surviving payload count / 3.
 
     ## Rewards
 
     Original BipedalWalker shaping (forward progress, angle penalty,
-    motor torque penalty, −100 on hull fall) plus:
+    motor torque penalty, −100 on fall) plus:
 
     - ``+0.05 × in_cup_count`` every step.
     - ``−20`` per payload lost.
-
-    Episodes continue when all payloads are lost — a "sprint" strategy
-    is allowed.
-
-    ## Starting State
-
-    Walker stands upright at ``x ≈ 6 m``. Three payloads are placed
-    vertically inside the mug with small ``x``-offsets.
-
-    ## Episode Termination
-
-    - Hull touches terrain (fall): ``terminated=True``, reward −100.
-    - 1600 steps reached (``TimeLimit`` wrapper): ``truncated=True``.
-    - End of terrain reached: ``terminated=True``.
 
     ## Arguments
 
@@ -214,8 +212,9 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
         gym.make(
             "MugheadWalker-v0",
             num_payloads=3,            # 0-3 supported
-            payload_mass_ratio=0.06,   # hull mass fraction per payload
+            payload_mass_ratio=0.06,   # chassis mass fraction per payload
             payload_bounciness=0.15,   # restitution (0-1)
+            mug_inner_width=50.0,      # interior cup width (10-120)
             terrain_difficulty=0,      # only 0 supported now
             obstacles=False,           # only False supported now
             external_force=0.0,        # only 0 supported now
@@ -233,6 +232,7 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
         num_payloads: int = DEFAULT_NUM_PAYLOADS,
         payload_mass_ratio: float = DEFAULT_PAYLOAD_MASS_RATIO,
         payload_bounciness: float = DEFAULT_PAYLOAD_BOUNCINESS,
+        mug_inner_width: float = 50.0,
         terrain_difficulty: int = 0,
         obstacles: bool = False,
         external_force: float = 0.0,
@@ -243,6 +243,7 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
             num_payloads,
             payload_mass_ratio,
             payload_bounciness,
+            mug_inner_width,
             terrain_difficulty,
             obstacles,
             external_force,
@@ -269,12 +270,17 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
             raise ValueError(
                 f"payload_mass_ratio must be positive, got {payload_mass_ratio}"
             )
+        if not (10.0 <= mug_inner_width <= 120.0):
+            raise ValueError(f"mug_inner_width must be in [10, 120], got {mug_inner_width}")
 
+        self.mug_inner_width = mug_inner_width
         self.isopen = True
 
         self.world = Box2D.b2World()
         self.terrain: list[Box2D.b2Body] = []
-        self.hull: Box2D.b2Body | None = None
+        self.chassis: Box2D.b2Body | None = None
+        self.mug: Box2D.b2Body | None = None
+        self.waist_joint = None
 
         self.prev_shaping = None
 
@@ -289,79 +295,62 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
             categoryBits=0x0001,
         )
 
-        # we use 5.0 to represent the joints moving at maximum
-        # 5 x the rated speed due to impulses from ground contact etc.
         low = np.array(
             [
-                -math.pi,
-                -5.0,
-                -5.0,
-                -5.0,
-                -math.pi,
-                -5.0,
-                -math.pi,
-                -5.0,
-                -0.0,
-                -math.pi,
-                -5.0,
-                -math.pi,
-                -5.0,
-                -0.0,
+                -math.pi,  # 0: chassis angle
+                -5.0,      # 1: chassis angular velocity
+                -5.0,      # 2: chassis vel x
+                -5.0,      # 3: chassis vel y
+                -math.pi,  # 4: hip1 angle
+                -5.0,      # 5: hip1 speed
+                -math.pi,  # 6: knee1 angle (+1)
+                -5.0,      # 7: knee1 speed
+                -0.0,      # 8: leg1 contact
+                -math.pi,  # 9: hip2 angle
+                -5.0,      # 10: hip2 speed
+                -math.pi,  # 11: knee2 angle (+1)
+                -5.0,      # 12: knee2 speed
+                -0.0,      # 13: leg2 contact
             ]
-            + [-1.0] * 10
-            + [-np.inf] * 6  # payload rel pos (x,y) × 3
-            + [-np.inf] * 6  # payload rel vel (vx,vy) × 3
-            + [0.0] * 3      # in_cup flags
-            + [0.0]          # remaining_count / 3
+            + [-1.0] * 10   # 14-23: LIDAR
+            + [-math.pi]     # 24: waist angle
+            + [-5.0]         # 25: waist speed
+            + [-np.inf] * 6  # 26-31: payload rel pos (x,y) × 3
+            + [-np.inf] * 6  # 32-37: payload rel vel (vx,vy) × 3
+            + [0.0] * 3      # 38-40: in_cup flags
+            + [0.0]          # 41: remaining_count / 3
         ).astype(np.float32)
         high = np.array(
             [
-                math.pi,
-                5.0,
-                5.0,
-                5.0,
-                math.pi,
-                5.0,
-                math.pi,
-                5.0,
-                5.0,
-                math.pi,
-                5.0,
-                math.pi,
-                5.0,
-                5.0,
+                math.pi,   # 0
+                5.0,       # 1
+                5.0,       # 2
+                5.0,       # 3
+                math.pi,   # 4
+                5.0,       # 5
+                math.pi,   # 6
+                5.0,       # 7
+                5.0,       # 8
+                math.pi,   # 9
+                5.0,       # 10
+                math.pi,   # 11
+                5.0,       # 12
+                5.0,       # 13
             ]
-            + [1.0] * 10
-            + [np.inf] * 6
-            + [np.inf] * 6
-            + [1.0] * 3
-            + [1.0]
+            + [1.0] * 10    # 14-23: LIDAR
+            + [math.pi]      # 24: waist angle
+            + [5.0]          # 25: waist speed
+            + [np.inf] * 6   # 26-31: payload rel pos
+            + [np.inf] * 6   # 32-37: payload rel vel
+            + [1.0] * 3      # 38-40: in_cup flags
+            + [1.0]          # 41: remaining_count
         ).astype(np.float32)
+
         self.action_space = spaces.Box(
-            np.array([-1, -1, -1, -1]).astype(np.float32),
-            np.array([1, 1, 1, 1]).astype(np.float32),
+            np.array([-1, -1, -1, -1, -1]).astype(np.float32),
+            np.array([1, 1, 1, 1, 1]).astype(np.float32),
         )
         self.observation_space = spaces.Box(low, high)
-
-        # state = [
-        #     self.hull.angle,  # Normal angles up to 0.5 here, but sure more is possible.
-        #     2.0 * self.hull.angularVelocity / FPS,
-        #     0.3 * vel.x * (VIEWPORT_W / SCALE) / FPS,  # Normalized to get -1..1 range
-        #     0.3 * vel.y * (VIEWPORT_H / SCALE) / FPS,
-        #     self.joints[
-        #         0
-        #     ].angle,  # This will give 1.1 on high up, but it's still OK (and there should be spikes on hitting the ground, that's normal too)
-        #     self.joints[0].speed / SPEED_HIP,
-        #     self.joints[1].angle + 1.0,
-        #     self.joints[1].speed / SPEED_KNEE,
-        #     1.0 if self.legs[1].ground_contact else 0.0,
-        #     self.joints[2].angle,
-        #     self.joints[2].speed / SPEED_HIP,
-        #     self.joints[3].angle + 1.0,
-        #     self.joints[3].speed / SPEED_KNEE,
-        #     1.0 if self.legs[3].ground_contact else 0.0,
-        # ]
-        # state += [l.fraction for l in self.lidar]
 
         self._num_payloads = num_payloads
         self._payload_mass_ratio = payload_mass_ratio
@@ -372,40 +361,149 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
         self.screen: pygame.Surface | None = None
         self.clock = None
 
+    def _build_mug_fixtures(self):
+        """Build mug fixtures using per-instance mug_inner_width.
+
+        Wall thickness is fixed at MUG_WALL_T=5 unscaled, regardless of inner width.
+        The slab spans the full outer width (inner + 2 walls).
+        """
+        half_inner = self.mug_inner_width / 2
+        wall_t = MUG_WALL_T  # 5 units
+        half_outer = half_inner + wall_t  # outer = inner + 2 walls
+        wall_half_w = wall_t / 2
+        # Wall center x in mug-local (unscaled): ± (half_inner + half_wall_t)
+        wall_center_x = half_inner + wall_half_w
+
+        slab_half = (half_outer, MUG_SLAB_HALF_H)
+        slab_center = (0.0, MUG_SLAB_CENTER_Y)
+        left_half = (wall_half_w, MUG_WALL_HALF_H)
+        left_center = (-wall_center_x, MUG_WALL_CENTER_Y)
+        right_half = (wall_half_w, MUG_WALL_HALF_H)
+        right_center = (wall_center_x, MUG_WALL_CENTER_Y)
+
+        return [
+            _mug_fixture(slab_half, slab_center),
+            _mug_fixture(left_half, left_center),
+            _mug_fixture(right_half, right_center),
+        ]
+
+    def _create_chassis(self):
+        """Narrow pelvis body; legs attach here."""
+        init_x = TERRAIN_STEP * TERRAIN_STARTPAD / 2
+        init_y = TERRAIN_HEIGHT + 2 * LEG_H
+        half_w = CHASSIS_W / 2
+        half_h = CHASSIS_H / 2
+        poly = [
+            (-half_w / SCALE, -half_h / SCALE),
+            ( half_w / SCALE, -half_h / SCALE),
+            ( half_w / SCALE,  half_h / SCALE),
+            (-half_w / SCALE,  half_h / SCALE),
+        ]
+        fix = fixtureDef(
+            shape=polygonShape(vertices=poly),
+            density=CHASSIS_DENSITY,
+            friction=0.1,
+            restitution=0.0,
+            categoryBits=CAT_CHASSIS,
+            maskBits=CAT_TERRAIN,
+        )
+        self.chassis = self.world.CreateDynamicBody(
+            position=(init_x, init_y),
+            fixtures=fix,
+        )
+        self.chassis.color1 = (180, 130, 70)   # warm brown (like original hull)
+        self.chassis.color2 = (60, 40, 20)
+
+    def _create_mug(self):
+        """U-shaped open-top cup above the chassis; carries payloads."""
+        init_x = TERRAIN_STEP * TERRAIN_STARTPAD / 2
+        # Mug center sits above chassis top: chassis_top_y + half of mug height offset
+        chassis_top_y = self.chassis.position[1] + (CHASSIS_H / 2) / SCALE
+        # The mug slab center is at MUG_SLAB_CENTER_Y (unscaled) = -11.0 relative to mug center.
+        # We want the mug slab bottom (≈ MUG_SLAB_CENTER_Y - MUG_SLAB_HALF_H = -12.5) to sit
+        # just above chassis_top_y. So mug_center_y = chassis_top_y + 12.5/SCALE + small gap.
+        gap = 1.0 / SCALE  # small gap between chassis top and mug slab bottom
+        mug_slab_bottom_offset = abs(MUG_SLAB_CENTER_Y + MUG_SLAB_HALF_H) / SCALE  # 12.5/SCALE
+        init_y = chassis_top_y + mug_slab_bottom_offset + gap
+
+        fixtures = self._build_mug_fixtures()
+        self.mug = self.world.CreateDynamicBody(
+            position=(init_x, init_y),
+            fixtures=fixtures,
+        )
+        self.mug.color1 = (240, 235, 220)   # cream / ceramic mug
+        self.mug.color2 = (60, 60, 60)       # outline
+
+    def _create_waist_joint(self):
+        """Motorized revolute joint between chassis top and mug bottom."""
+        # Anchor at chassis top center (in world coords).
+        anchor_x = self.chassis.position[0]
+        anchor_y = self.chassis.position[1] + (CHASSIS_H / 2) / SCALE
+        self.waist_joint = self.world.CreateRevoluteJoint(
+            bodyA=self.chassis,
+            bodyB=self.mug,
+            anchor=(anchor_x, anchor_y),
+            enableMotor=True,
+            enableLimit=True,
+            lowerAngle=-WAIST_LIMIT,
+            upperAngle=+WAIST_LIMIT,
+            motorSpeed=0.0,
+            maxMotorTorque=WAIST_TORQUE,
+            collideConnected=False,
+        )
+
     def _create_payloads(self):
         """Create payload circle bodies inside the mug. Appends to self.payloads."""
         self.payloads: list = []
-        hull_mass = self.hull.mass
-        payload_mass = hull_mass * self._payload_mass_ratio
-        # density for circle: mass / (pi * r^2)   where r is in meters
-        r_m = PAYLOAD_RADIUS / SCALE
+        if self._num_payloads <= 0:
+            return
+        r_unscaled = PAYLOAD_RADIUS
+        r_m = r_unscaled / SCALE
+        chassis_mass = self.chassis.mass
+        payload_mass = chassis_mass * self._payload_mass_ratio
+        # density for circle: mass / (pi * r^2)
         density = payload_mass / (math.pi * r_m * r_m)
-        for i in range(self._num_payloads):
-            local_x, local_y = PAYLOAD_INIT_POSITIONS[i]
-            world_pos = self.hull.GetWorldPoint((local_x / SCALE, local_y / SCALE))
+
+        # Pyramid layout in mug-local frame (unscaled): 2 balls touching on the
+        # cup floor, 1 ball at the stable rest height above the V-gap they form.
+        # For touching circles of radius r, the top ball center sits at
+        # y_bottom + r*sqrt(3) to make an equilateral triangle of side 2r.
+        bottom_y = MUG_SLAB_CENTER_Y + MUG_SLAB_HALF_H + r_unscaled  # -9.5 + r
+        top_y = bottom_y + r_unscaled * math.sqrt(3)
+        positions_unscaled = [
+            (-r_unscaled, bottom_y),          # bottom left, touching center
+            (r_unscaled, bottom_y),           # bottom right, touching center
+            (0.0, top_y),                     # top, resting in the V
+        ]
+
+        for i in range(min(self._num_payloads, 3)):
+            lx_unscaled, ly_unscaled = positions_unscaled[i]
+            local_x = lx_unscaled / SCALE
+            local_y = ly_unscaled / SCALE
+            world_pos = self.mug.GetWorldPoint((local_x, local_y))
             fd = fixtureDef(
                 shape=circleShape(radius=r_m),
                 density=density,
                 friction=PAYLOAD_FRICTION,
                 restitution=self._payload_bounciness,
                 categoryBits=CAT_PAYLOAD,
-                maskBits=CAT_TERRAIN | CAT_MUG | CAT_PAYLOAD,
+                maskBits=CAT_TERRAIN | CAT_MUG | CAT_LEG | CAT_PAYLOAD,
             )
             body = self.world.CreateDynamicBody(
                 position=world_pos,
                 fixtures=fd,
                 linearDamping=PAYLOAD_LINEAR_DAMPING,
             )
-            body.color1 = [(220, 80, 80), (80, 180, 80), (80, 120, 220)][i]
-            body.color2 = (255, 255, 255)
+            body.color1 = PAYLOAD_COLORS[i % len(PAYLOAD_COLORS)][0]
+            body.color2 = PAYLOAD_COLORS[i % len(PAYLOAD_COLORS)][1]
             self.payloads.append(body)
 
     def _payload_obs(self) -> list[float]:
         """Return the 16 payload-related observation elements.
 
-        Layout (see spec §5):
-            6: 3 × (rel_x, rel_y) / 50
-            6: 3 × (rel_vx, rel_vy) / 10
+        Layout (spec §3):
+            6: 3 × (rel_x, rel_y) in mug-local frame / (50 / SCALE)
+            6: 3 × (rel_vx, rel_vy) in mug-local frame / (10 / SCALE)
             3: 3 × in_cup flag
             1: remaining_count / 3
         """
@@ -417,10 +515,10 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
             if p is None:
                 continue
             remaining += 1
-            local_pos = self.hull.GetLocalPoint(p.position)
-            # Relative velocity in hull local frame (subtract hull velocity at payload point first).
-            world_vel = p.linearVelocity - self.hull.GetLinearVelocityFromWorldPoint(p.position)
-            local_vel = self.hull.GetLocalVector(world_vel)
+            local_pos = self.mug.GetLocalPoint(p.position)
+            # Relative velocity in mug-local frame.
+            world_vel = p.linearVelocity - self.mug.GetLinearVelocityFromWorldPoint(p.position)
+            local_vel = self.mug.GetLocalVector(world_vel)
             pos_elems[2 * i] = local_pos[0] / (50.0 / SCALE)
             pos_elems[2 * i + 1] = local_pos[1] / (50.0 / SCALE)
             vel_elems[2 * i] = local_vel[0] / (10.0 / SCALE)
@@ -429,11 +527,14 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
                 flag_elems[i] = 1.0
         return pos_elems + vel_elems + flag_elems + [remaining / 3.0]
 
-    @staticmethod
-    def _is_in_cup(local_pos) -> bool:
-        """Hull-local rectangle check for 'inside the mug'."""
+    def _is_in_cup(self, local_pos) -> bool:
+        """Mug-local rectangle check for 'inside the mug'.
+
+        Uses self.mug_inner_width so narrow/wide cup instances work correctly.
+        """
         lx, ly = local_pos[0] * SCALE, local_pos[1] * SCALE  # back to unscaled
-        return (-35.0 <= lx <= 35.0) and (-9.5 <= ly <= 22.0)
+        half_w = self.mug_inner_width / 2
+        return (-half_w <= lx <= half_w) and (-9.5 <= ly <= 22.0)
 
     def _check_payload_losses(self) -> int:
         """Destroy any payload that exits the mug. Returns count of newly-lost payloads."""
@@ -441,8 +542,8 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
         for i, p in enumerate(self.payloads):
             if p is None:
                 continue
-            dx = p.position[0] - self.hull.position[0]
-            dy = p.position[1] - self.hull.position[1]
+            dx = p.position[0] - self.mug.position[0]
+            dy = p.position[1] - self.mug.position[1]
             dist = (dx * dx + dy * dy) ** 0.5
             below_ground = p.position[1] < (TERRAIN_HEIGHT - LOSS_Y_BELOW_GROUND)
             if dist > LOSS_DISTANCE or below_ground:
@@ -458,9 +559,17 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
         for t in self.terrain:
             self.world.DestroyBody(t)
         self.terrain = []
-        self.world.DestroyBody(self.hull)
-        self.hull = None
-        for leg in self.legs:
+        # Destroy waist joint before its bodies.
+        if self.waist_joint is not None:
+            self.world.DestroyJoint(self.waist_joint)
+            self.waist_joint = None
+        if self.chassis is not None:
+            self.world.DestroyBody(self.chassis)
+            self.chassis = None
+        if self.mug is not None:
+            self.world.DestroyBody(self.mug)
+            self.mug = None
+        for leg in getattr(self, "legs", []):
             self.world.DestroyBody(leg)
         self.legs = []
         self.joints = []
@@ -635,16 +744,18 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
         self._generate_terrain(False)
         self._generate_clouds()
 
-        init_x = TERRAIN_STEP * TERRAIN_STARTPAD / 2
-        init_y = TERRAIN_HEIGHT + 2 * LEG_H
-        self.hull = self.world.CreateDynamicBody(
-            position=(init_x, init_y), fixtures=_build_mug_fixtures()
-        )
-        self.hull.color1 = (240, 235, 220)  # cream / ceramic mug
-        self.hull.color2 = (60, 60, 60)     # outline
-        self.hull.ApplyForceToCenter(
+        # Create chassis first (legs attach to it), then mug above it, then waist joint.
+        self._create_chassis()
+        self._create_mug()
+        self._create_waist_joint()
+
+        # Apply small random force to chassis for variation.
+        self.chassis.ApplyForceToCenter(
             (self.np_random.uniform(-INITIAL_RANDOM, INITIAL_RANDOM), 0), True
         )
+
+        init_x = self.chassis.position[0]
+        init_y = self.chassis.position[1]
 
         self.legs: list[Box2D.b2Body] = []
         self.joints: list[Box2D.b2RevoluteJoint] = []
@@ -657,7 +768,7 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
             leg.color1 = (153 - i * 25, 76 - i * 25, 127 - i * 25)
             leg.color2 = (102 - i * 25, 51 - i * 25, 76 - i * 25)
             rjd = revoluteJointDef(
-                bodyA=self.hull,
+                bodyA=self.chassis,
                 bodyB=leg,
                 localAnchorA=(0, LEG_DOWN),
                 localAnchorB=(0, LEG_H / 2),
@@ -707,12 +818,12 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
         self.lidar = [LidarCallback() for _ in range(10)]
         if self.render_mode == "human":
             self.render()
-        return self.step(np.array([0, 0, 0, 0]))[0], {}
+        return self.step(np.array([0, 0, 0, 0, 0]))[0], {}
 
     def step(self, action: np.ndarray):
-        assert self.hull is not None
+        assert self.chassis is not None
+        assert self.mug is not None
 
-        # self.hull.ApplyForceToCenter((0, 20), True) -- Uncomment this to receive a bit of stability help
         control_speed = False  # Should be easier as well
         if control_speed:
             self.joints[0].motorSpeed = float(SPEED_HIP * np.clip(action[0], -1, 1))
@@ -737,10 +848,16 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
                 MOTORS_TORQUE * np.clip(np.abs(action[3]), 0, 1)
             )
 
+        # Waist control from action[4] (spec §4).
+        self.waist_joint.motorSpeed = float(WAIST_SPEED * np.sign(action[4]))
+        self.waist_joint.maxMotorTorque = float(
+            WAIST_TORQUE * np.clip(np.abs(action[4]), 0, 1)
+        )
+
         self.world.Step(1.0 / FPS, 6 * 30, 2 * 30)
 
-        pos = self.hull.position
-        vel = self.hull.linearVelocity
+        pos = self.chassis.position
+        vel = self.chassis.linearVelocity
 
         for i in range(10):
             self.lidar[i].fraction = 1.0
@@ -752,35 +869,36 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
             self.world.RayCast(self.lidar[i], self.lidar[i].p1, self.lidar[i].p2)
 
         state = [
-            self.hull.angle,  # Normal angles up to 0.5 here, but sure more is possible.
-            2.0 * self.hull.angularVelocity / FPS,
-            0.3 * vel.x * (VIEWPORT_W / SCALE) / FPS,  # Normalized to get -1..1 range
-            0.3 * vel.y * (VIEWPORT_H / SCALE) / FPS,
-            self.joints[0].angle,
-            # This will give 1.1 on high up, but it's still OK (and there should be spikes on hitting the ground, that's normal too)
-            self.joints[0].speed / SPEED_HIP,
-            self.joints[1].angle + 1.0,
-            self.joints[1].speed / SPEED_KNEE,
-            1.0 if self.legs[1].ground_contact else 0.0,
-            self.joints[2].angle,
-            self.joints[2].speed / SPEED_HIP,
-            self.joints[3].angle + 1.0,
-            self.joints[3].speed / SPEED_KNEE,
-            1.0 if self.legs[3].ground_contact else 0.0,
+            self.chassis.angle,                              # 0
+            2.0 * self.chassis.angularVelocity / FPS,        # 1
+            0.3 * vel.x * (VIEWPORT_W / SCALE) / FPS,        # 2
+            0.3 * vel.y * (VIEWPORT_H / SCALE) / FPS,        # 3
+            self.joints[0].angle,                            # 4
+            self.joints[0].speed / SPEED_HIP,               # 5
+            self.joints[1].angle + 1.0,                      # 6
+            self.joints[1].speed / SPEED_KNEE,               # 7
+            1.0 if self.legs[1].ground_contact else 0.0,     # 8
+            self.joints[2].angle,                            # 9
+            self.joints[2].speed / SPEED_HIP,               # 10
+            self.joints[3].angle + 1.0,                      # 11
+            self.joints[3].speed / SPEED_KNEE,               # 12
+            1.0 if self.legs[3].ground_contact else 0.0,     # 13
         ]
-        state += [l.fraction for l in self.lidar]
+        state += [l.fraction for l in self.lidar]  # 14-23
         assert len(state) == 24
-        state += self._payload_obs()
-        assert len(state) == 40
+        # New waist slots (spec §3).
+        state += [
+            self.waist_joint.angle,                  # 24
+            self.waist_joint.speed / SPEED_HIP,      # 25
+        ]
+        assert len(state) == 26
+        state += self._payload_obs()  # 26-41
+        assert len(state) == 42
 
         self.scroll = pos.x - VIEWPORT_W / SCALE / 5
 
-        shaping = (
-            130 * pos[0] / SCALE
-        )  # moving forward is a way to receive reward (normalized to get 300 on completion)
-        shaping -= 5.0 * abs(
-            state[0]
-        )  # keep head straight, other than that and falling, any behavior is unpunished
+        shaping = 130 * pos[0] / SCALE
+        shaping -= 5.0 * abs(state[0])  # chassis angle
 
         reward = 0
         if self.prev_shaping is not None:
@@ -789,10 +907,9 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
 
         for a in action:
             reward -= 0.00035 * MOTORS_TORQUE * np.clip(np.abs(a), 0, 1)
-            # normalized to about -50.0 using heuristic, more optimal agent should spend less
 
-        # Mug extensions (spec §7).
-        in_cup_count = int(sum(state[36:39]))
+        # Payload bonus (spec §7).
+        in_cup_count = int(sum(state[38:41]))
         reward += 0.05 * in_cup_count
 
         num_lost = self._check_payload_losses()
@@ -800,7 +917,7 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
             reward -= 20.0 * num_lost
             self._flash_frames = 3
             # Rewrite payload obs slots to reflect destroyed bodies.
-            state[24:40] = self._payload_obs()
+            state[26:42] = self._payload_obs()
 
         terminated = False
         if self.game_over or pos[0] < 0:
@@ -814,8 +931,8 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
         info = {
             "payloads_remaining": sum(1 for p in self.payloads if p is not None),
             "distance": float(pos.x),
+            "waist_angle": float(self.waist_joint.angle),
         }
-        # truncation=False as the time limit is handled by the `TimeLimit` wrapper added during `make`
         return np.array(state, dtype=np.float32), float(reward), terminated, False, info
 
     def render(self):
@@ -905,7 +1022,10 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
                     width=1,
                 )
 
-        for obj in self.terrain + self.legs + [self.hull] + [p for p in self.payloads if p is not None]:
+        drawlist = self.terrain + self.legs + [self.chassis, self.mug] \
+                   + [p for p in self.payloads if p is not None]
+
+        for obj in drawlist:
             for f in obj.fixtures:
                 trans = f.body.transform
                 if type(f.shape) is circleShape:
@@ -915,7 +1035,6 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
                         center=trans * f.shape.pos * SCALE,
                         radius=f.shape.radius * SCALE,
                     )
-                    # Draw color2 as a 1-pixel border outline (preserves color1 fill).
                     pygame.draw.circle(
                         self.surf,
                         color=obj.color2,
@@ -959,6 +1078,12 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
 
         self.surf = pygame.transform.flip(self.surf, False, True)
 
+        # Waist hinge marker (dark circle at joint anchor, post-flip).
+        anchor_world = self.waist_joint.anchorA
+        sx = anchor_world[0] * SCALE - self.scroll * SCALE
+        sy = VIEWPORT_H - anchor_world[1] * SCALE
+        pygame.draw.circle(self.surf, (40, 40, 40), (int(sx), int(sy)), 3)
+
         # HUD overlay (post-flip — text should read normally).
         if not pygame.font.get_init():
             pygame.font.init()
@@ -966,7 +1091,8 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
         remaining = sum(1 for p in self.payloads if p is not None)
         hud_lines = [
             f"Payloads: {remaining}/{self._num_payloads}",
-            f"Distance: {self.hull.position[0]:.1f} m",
+            f"Distance: {self.chassis.position[0]:.1f} m",
+            f"Waist: {math.degrees(self.waist_joint.angle):.1f}°",
         ]
         for i, line in enumerate(hud_lines):
             text = font.render(line, True, (0, 0, 0))

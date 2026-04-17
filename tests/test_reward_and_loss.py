@@ -5,7 +5,7 @@ import mughead_walker  # noqa: F401
 
 
 def _zero_action():
-    return np.zeros(4, dtype=np.float32)
+    return np.zeros(5, dtype=np.float32)  # was 4
 
 
 def test_in_cup_bonus_applied():
@@ -26,13 +26,13 @@ def test_payload_loss_removes_body_and_applies_penalty():
     env = gym.make("MugheadWalker-v0")
     env.reset(seed=0)
     u = env.unwrapped
-    # Place payload 0 10 meters away from hull in the +x direction.
-    u.payloads[0].position = (u.hull.position[0] + 10.0, u.hull.position[1])
+    # Place payload 0 10 meters away from mug (payload-loss distance uses mug frame).
+    u.payloads[0].position = (u.mug.position[0] + 10.0, u.mug.position[1])
     obs, reward, terminated, truncated, info = env.step(_zero_action())
     assert not terminated
     assert u.payloads[0] is None
     assert reward <= -19.5, f"expected reward ≤ -20 from loss, got {reward}"
-    assert obs[39] == 2.0 / 3.0
+    assert obs[41] == 2.0 / 3.0  # was obs[39]
     env.close()
 
 
@@ -40,13 +40,13 @@ def test_all_payloads_lost_does_not_terminate():
     env = gym.make("MugheadWalker-v0")
     env.reset(seed=0)
     u = env.unwrapped
-    far_x = u.hull.position[0] + 10.0
+    far_x = u.mug.position[0] + 10.0  # was hull.position
     for p in u.payloads:
-        p.position = (far_x, u.hull.position[1])
+        p.position = (far_x, u.mug.position[1])
     obs, reward, terminated, truncated, info = env.step(_zero_action())
     assert not terminated
     assert all(p is None for p in u.payloads)
-    assert obs[39] == 0.0
+    assert obs[41] == 0.0  # was obs[39]
     # One more step: no more loss penalty, episode continues.
     obs2, r2, terminated2, *_ = env.step(_zero_action())
     assert not terminated2
