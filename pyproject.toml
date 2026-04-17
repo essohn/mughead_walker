@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mughead-walker"
+version = "0.1.0"
+description = "MugheadWalker-v0 Gymnasium environment (BipedalWalker fork with a mug-shaped hull carrying payloads)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Yonsei AI Course" }]
+dependencies = [
+    "gymnasium[box2d]>=1.0",
+    "numpy>=1.26",
+    "pygame>=2.5",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.setuptools.packages.find]
+include = ["mughead_walker*"]
+exclude = ["tests*", "examples*", "docs*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
