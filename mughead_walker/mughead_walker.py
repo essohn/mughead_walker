@@ -270,6 +270,10 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
                 -0.0,
             ]
             + [-1.0] * 10
+            + [-np.inf] * 6  # payload rel pos (x,y) × 3
+            + [-np.inf] * 6  # payload rel vel (vx,vy) × 3
+            + [0.0] * 3      # in_cup flags
+            + [0.0]          # remaining_count / 3
         ).astype(np.float32)
         high = np.array(
             [
@@ -289,6 +293,10 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
                 5.0,
             ]
             + [1.0] * 10
+            + [np.inf] * 6
+            + [np.inf] * 6
+            + [1.0] * 3
+            + [1.0]
         ).astype(np.float32)
         self.action_space = spaces.Box(
             np.array([-1, -1, -1, -1]).astype(np.float32),
@@ -351,6 +359,41 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
             body.color1 = [(220, 80, 80), (80, 180, 80), (80, 120, 220)][i]
             body.color2 = (255, 255, 255)
             self.payloads.append(body)
+
+    def _payload_obs(self) -> list[float]:
+        """Return the 16 payload-related observation elements.
+
+        Layout (see spec §5):
+            6: 3 × (rel_x, rel_y) / 50
+            6: 3 × (rel_vx, rel_vy) / 10
+            3: 3 × in_cup flag
+            1: remaining_count / 3
+        """
+        pos_elems = [0.0] * 6
+        vel_elems = [0.0] * 6
+        flag_elems = [0.0] * 3
+        remaining = 0
+        for i, p in enumerate(self.payloads[:3]):
+            if p is None:
+                continue
+            remaining += 1
+            local_pos = self.hull.GetLocalPoint(p.position)
+            # Relative velocity in hull local frame (subtract hull velocity at payload point first).
+            world_vel = p.linearVelocity - self.hull.GetLinearVelocityFromWorldPoint(p.position)
+            local_vel = self.hull.GetLocalVector(world_vel)
+            pos_elems[2 * i] = local_pos[0] / (50.0 / SCALE)
+            pos_elems[2 * i + 1] = local_pos[1] / (50.0 / SCALE)
+            vel_elems[2 * i] = local_vel[0] / (10.0 / SCALE)
+            vel_elems[2 * i + 1] = local_vel[1] / (10.0 / SCALE)
+            if self._is_in_cup(local_pos):
+                flag_elems[i] = 1.0
+        return pos_elems + vel_elems + flag_elems + [remaining / 3.0]
+
+    @staticmethod
+    def _is_in_cup(local_pos) -> bool:
+        """Hull-local rectangle check for 'inside the mug'."""
+        lx, ly = local_pos[0] * SCALE, local_pos[1] * SCALE  # back to unscaled
+        return (-35.0 <= lx <= 35.0) and (-9.5 <= ly <= 22.0)
 
     def _destroy(self):
         if not self.terrain:
@@ -672,6 +715,8 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
         ]
         state += [l.fraction for l in self.lidar]
         assert len(state) == 24
+        state += self._payload_obs()
+        assert len(state) == 40
 
         self.scroll = pos.x - VIEWPORT_W / SCALE / 5
 
