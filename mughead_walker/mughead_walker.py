@@ -63,6 +63,25 @@ CAT_PAYLOAD = 0x0040
 # Default MUG_DENSITY ≈ 11.6 matches the original mass. Exposed for manual tuning.
 MUG_DENSITY = 11.6
 
+# Payload parameters (unscaled radius; see spec §4.2).
+PAYLOAD_RADIUS = 5.0
+PAYLOAD_FRICTION = 0.4
+PAYLOAD_LINEAR_DAMPING = 0.5
+DEFAULT_PAYLOAD_MASS_RATIO = 0.06
+DEFAULT_PAYLOAD_BOUNCINESS = 0.15
+DEFAULT_NUM_PAYLOADS = 3
+
+# Initial positions (hull local, unscaled) — vertical stack.
+PAYLOAD_INIT_POSITIONS = [
+    (0.3, -4.5),
+    (-0.2, 5.5),
+    (0.1, 15.5),
+]
+
+# Loss thresholds.
+LOSS_DISTANCE = 80.0 / SCALE   # Box2D meters from hull center
+LOSS_Y_BELOW_GROUND = 1.0 / SCALE  # drop below TERRAIN_HEIGHT by this much
+
 # Legs hang from the bottom of the mug slab.
 LEG_DOWN = MUG_SLAB_BOTTOM_Y / SCALE
 LEG_W, LEG_H = 8 / SCALE, 34 / SCALE
@@ -297,9 +316,41 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
         # ]
         # state += [l.fraction for l in self.lidar]
 
+        self._num_payloads = DEFAULT_NUM_PAYLOADS
+        self._payload_mass_ratio = DEFAULT_PAYLOAD_MASS_RATIO
+        self._payload_bounciness = DEFAULT_PAYLOAD_BOUNCINESS
+
         self.render_mode = render_mode
         self.screen: pygame.Surface | None = None
         self.clock = None
+
+    def _create_payloads(self):
+        """Create payload circle bodies inside the mug. Appends to self.payloads."""
+        self.payloads: list = []
+        hull_mass = self.hull.mass
+        payload_mass = hull_mass * self._payload_mass_ratio
+        # density for circle: mass / (pi * r^2)   where r is in meters
+        r_m = PAYLOAD_RADIUS / SCALE
+        density = payload_mass / (math.pi * r_m * r_m)
+        for i in range(self._num_payloads):
+            local_x, local_y = PAYLOAD_INIT_POSITIONS[i]
+            world_pos = self.hull.GetWorldPoint((local_x / SCALE, local_y / SCALE))
+            fd = fixtureDef(
+                shape=circleShape(radius=r_m),
+                density=density,
+                friction=PAYLOAD_FRICTION,
+                restitution=self._payload_bounciness,
+                categoryBits=CAT_PAYLOAD,
+                maskBits=CAT_TERRAIN | CAT_MUG | CAT_PAYLOAD,
+            )
+            body = self.world.CreateDynamicBody(
+                position=world_pos,
+                fixtures=fd,
+                linearDamping=PAYLOAD_LINEAR_DAMPING,
+            )
+            body.color1 = [(220, 80, 80), (80, 180, 80), (80, 120, 220)][i]
+            body.color2 = (255, 255, 255)
+            self.payloads.append(body)
 
     def _destroy(self):
         if not self.terrain:
@@ -314,6 +365,10 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
             self.world.DestroyBody(leg)
         self.legs = []
         self.joints = []
+        for p in getattr(self, "payloads", []):
+            if p is not None:
+                self.world.DestroyBody(p)
+        self.payloads = []
 
     def _generate_terrain(self, hardcore):
         GRASS, STUMP, STAIRS, PIT, _STATES_ = range(5)
@@ -540,7 +595,8 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
             self.legs.append(lower)
             self.joints.append(self.world.CreateJoint(rjd))
 
-        self.drawlist = self.terrain + self.legs + [self.hull]
+        self._create_payloads()
+        self.drawlist = self.terrain + self.legs + [self.hull] + self.payloads
 
         class LidarCallback(Box2D.b2.rayCastCallback):
             def ReportFixture(self, fixture, point, normal, fraction):
