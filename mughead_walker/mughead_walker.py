@@ -248,6 +248,8 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
             obstacles,
             external_force,
         )
+        if not isinstance(num_payloads, int) or isinstance(num_payloads, bool):
+            raise TypeError(f"num_payloads must be an int, got {type(num_payloads).__name__}")
         if not (0 <= num_payloads <= 3):
             raise ValueError(f"num_payloads must be in [0, 3], got {num_payloads}")
         if terrain_difficulty != 0:

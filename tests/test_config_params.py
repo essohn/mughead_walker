@@ -31,6 +31,17 @@ def test_num_payloads_out_of_range_rejected():
         gym.make("MugheadWalker-v0", num_payloads=4)
 
 
+def test_num_payloads_float_rejected():
+    with pytest.raises(TypeError):
+        gym.make("MugheadWalker-v0", num_payloads=3.0)
+
+
+def test_num_payloads_bool_rejected():
+    # bool is a subclass of int in Python; explicitly reject it
+    with pytest.raises(TypeError):
+        gym.make("MugheadWalker-v0", num_payloads=True)
+
+
 def test_terrain_difficulty_nonzero_not_implemented():
     with pytest.raises(NotImplementedError):
         gym.make("MugheadWalker-v0", terrain_difficulty=1)
