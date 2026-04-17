@@ -78,7 +78,7 @@ CAT_CHASSIS = 0x0080   # NEW
 CAT_PAYLOAD = 0x0100   # shifted from 0x0040 to free up bits
 
 # Payload parameters (unscaled radius; see spec §4.2).
-PAYLOAD_RADIUS = 5.0
+PAYLOAD_RADIUS = 7.5
 PAYLOAD_FRICTION = 0.4
 PAYLOAD_LINEAR_DAMPING = 0.5
 DEFAULT_PAYLOAD_MASS_RATIO = 0.06
@@ -457,27 +457,29 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
         self.payloads: list = []
         if self._num_payloads <= 0:
             return
-        # Fixed payload radius (unscaled), same as original BipedalWalker derivation.
-        r_unscaled = PAYLOAD_RADIUS  # 5.0
+        r_unscaled = PAYLOAD_RADIUS
         r_m = r_unscaled / SCALE
         chassis_mass = self.chassis.mass
         payload_mass = chassis_mass * self._payload_mass_ratio
         # density for circle: mass / (pi * r^2)
         density = payload_mass / (math.pi * r_m * r_m)
 
-        # Initial positions in mug-local frame (unscaled).
-        # Stack vertically just above the slab top (-9.5 unscaled).
-        # Spacing = 2.2 * radius to avoid overlap.
-        slab_top_unscaled = MUG_SLAB_CENTER_Y + MUG_SLAB_HALF_H  # -9.5
-        base_y_unscaled = slab_top_unscaled + r_unscaled  # first payload center
-        step_y_unscaled = r_unscaled * 2.2  # vertical spacing
-
-        # Horizontal jitter (unscaled) — same tiny offsets as original PAYLOAD_INIT_POSITIONS.
-        x_jitter = [0.3, -0.2, 0.1]
+        # Pyramid layout in mug-local frame (unscaled): 2 balls touching on the
+        # cup floor, 1 ball at the stable rest height above the V-gap they form.
+        # For touching circles of radius r, the top ball center sits at
+        # y_bottom + r*sqrt(3) to make an equilateral triangle of side 2r.
+        bottom_y = MUG_SLAB_CENTER_Y + MUG_SLAB_HALF_H + r_unscaled  # -9.5 + r
+        top_y = bottom_y + r_unscaled * math.sqrt(3)
+        positions_unscaled = [
+            (-r_unscaled, bottom_y),          # bottom left, touching center
+            (r_unscaled, bottom_y),           # bottom right, touching center
+            (0.0, top_y),                     # top, resting in the V
+        ]
 
         for i in range(min(self._num_payloads, 3)):
-            local_x = x_jitter[i] / SCALE
-            local_y = (base_y_unscaled + i * step_y_unscaled) / SCALE
+            lx_unscaled, ly_unscaled = positions_unscaled[i]
+            local_x = lx_unscaled / SCALE
+            local_y = ly_unscaled / SCALE
             world_pos = self.mug.GetWorldPoint((local_x, local_y))
             fd = fixtureDef(
                 shape=circleShape(radius=r_m),
