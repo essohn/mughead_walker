@@ -139,11 +139,12 @@ class ContactDetector(contactListener):
         self.env = env
 
     def BeginContact(self, contact):
-        if (
-            self.env.hull == contact.fixtureA.body
-            or self.env.hull == contact.fixtureB.body
-        ):
-            self.env.game_over = True
+        bodies = {contact.fixtureA.body, contact.fixtureB.body}
+        if self.env.hull in bodies:
+            # Payload-hull contact is normal (payload sitting in the cup); ignore it.
+            other = (bodies - {self.env.hull}).pop()
+            if other not in self.env.payloads:
+                self.env.game_over = True
         for leg in [self.env.legs[1], self.env.legs[3]]:
             if leg in [contact.fixtureA.body, contact.fixtureB.body]:
                 leg.ground_contact = True
@@ -329,6 +330,7 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
         self._payload_bounciness = DEFAULT_PAYLOAD_BOUNCINESS
 
         self.render_mode = render_mode
+        self._flash_frames = 0
         self.screen: pygame.Surface | None = None
         self.clock = None
 
@@ -394,6 +396,22 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
         """Hull-local rectangle check for 'inside the mug'."""
         lx, ly = local_pos[0] * SCALE, local_pos[1] * SCALE  # back to unscaled
         return (-35.0 <= lx <= 35.0) and (-9.5 <= ly <= 22.0)
+
+    def _check_payload_losses(self) -> int:
+        """Destroy any payload that exits the mug. Returns count of newly-lost payloads."""
+        num_lost = 0
+        for i, p in enumerate(self.payloads):
+            if p is None:
+                continue
+            dx = p.position[0] - self.hull.position[0]
+            dy = p.position[1] - self.hull.position[1]
+            dist = (dx * dx + dy * dy) ** 0.5
+            below_ground = p.position[1] < (TERRAIN_HEIGHT - LOSS_Y_BELOW_GROUND)
+            if dist > LOSS_DISTANCE or below_ground:
+                self.world.DestroyBody(p)
+                self.payloads[i] = None
+                num_lost += 1
+        return num_lost
 
     def _destroy(self):
         if not self.terrain:
@@ -735,6 +753,17 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
         for a in action:
             reward -= 0.00035 * MOTORS_TORQUE * np.clip(np.abs(a), 0, 1)
             # normalized to about -50.0 using heuristic, more optimal agent should spend less
+
+        # Mug extensions (spec §7).
+        in_cup_count = int(sum(state[36:39]))
+        reward += 0.05 * in_cup_count
+
+        num_lost = self._check_payload_losses()
+        if num_lost > 0:
+            reward -= 20.0 * num_lost
+            self._flash_frames = 3
+            # Rewrite payload obs slots to reflect destroyed bodies.
+            state[24:40] = self._payload_obs()
 
         terminated = False
         if self.game_over or pos[0] < 0:
