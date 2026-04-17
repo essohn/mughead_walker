@@ -1,0 +1,9 @@
+{
+  "model": "runs/ppo_waist_20260418_022338/model.zip",
+  "episodes": 10,
+  "mean_reward": 337.2144932061434,
+  "std_reward": 97.78553799945888,
+  "mean_payloads": 3,
+  "mean_distance": 62.88638687133789,
+  "success_rate": 0.7
+}
