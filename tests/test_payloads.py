@@ -22,11 +22,11 @@ def test_three_payloads_created():
 def test_payload_initial_positions_inside_mug():
     env = gym.make("MugheadWalker-v0")
     env.reset(seed=0)
-    hull = env.unwrapped.hull
+    mug = env.unwrapped.mug  # was hull; payloads live in mug-local frame
     for p in env.unwrapped.payloads:
-        local = hull.GetLocalPoint(p.position)
-        # Payload center must be between walls and above the slab top.
-        assert -35.0 / 30.0 < local[0] < 35.0 / 30.0
+        local = mug.GetLocalPoint(p.position)
+        # Payload center must be between walls and above the slab top (narrower: ±25 unscaled).
+        assert -25.0 / 30.0 < local[0] < 25.0 / 30.0
         assert -9.5 / 30.0 < local[1] < 22.0 / 30.0
     env.close()
 
@@ -34,9 +34,9 @@ def test_payload_initial_positions_inside_mug():
 def test_payload_mass_ratio():
     env = gym.make("MugheadWalker-v0")
     env.reset(seed=0)
-    hull_mass = env.unwrapped.hull.mass
+    chassis_mass = env.unwrapped.chassis.mass  # was hull.mass
     for p in env.unwrapped.payloads:
-        ratio = p.mass / hull_mass
+        ratio = p.mass / chassis_mass
         # Default payload_mass_ratio = 0.06 — allow ±50% slack for float precision.
         assert 0.03 < ratio < 0.09, f"payload mass ratio {ratio:.3f} out of range"
     env.close()

@@ -33,8 +33,8 @@ def test_flash_activated_on_loss():
     env = gym.make("MugheadWalker-v0", render_mode="rgb_array")
     env.reset(seed=0)
     u = env.unwrapped
-    # Force a loss.
-    u.payloads[0].position = (u.hull.position[0] + 10.0, u.hull.position[1])
-    env.step(np.zeros(4, dtype=np.float32))
+    # Force a loss — teleport payload far from mug (loss check uses mug frame).
+    u.payloads[0].position = (u.mug.position[0] + 10.0, u.mug.position[1])
+    env.step(np.zeros(5, dtype=np.float32))  # was 4
     assert u._flash_frames > 0
     env.close()

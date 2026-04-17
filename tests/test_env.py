@@ -7,7 +7,7 @@ import mughead_walker  # noqa: F401
 
 
 def _zero_action():
-    return np.zeros(4, dtype=np.float32)
+    return np.zeros(5, dtype=np.float32)  # was 4
 
 
 def test_registration():
@@ -18,9 +18,9 @@ def test_registration():
 
 def test_spaces():
     env = gym.make("MugheadWalker-v0")
-    assert env.observation_space.shape == (40,)
+    assert env.observation_space.shape == (42,)  # was 40
     assert env.observation_space.dtype == np.float32
-    assert env.action_space.shape == (4,)
+    assert env.action_space.shape == (5,)  # was 4
     assert env.action_space.dtype == np.float32
     assert np.all(env.action_space.low == -1)
     assert np.all(env.action_space.high == 1)
@@ -30,10 +30,10 @@ def test_spaces():
 def test_reset_step_contract():
     env = gym.make("MugheadWalker-v0")
     obs, info = env.reset(seed=0)
-    assert obs.shape == (40,) and obs.dtype == np.float32
+    assert obs.shape == (42,) and obs.dtype == np.float32  # was 40
     assert isinstance(info, dict)
     obs2, reward, terminated, truncated, info2 = env.step(_zero_action())
-    assert obs2.shape == (40,) and obs2.dtype == np.float32
+    assert obs2.shape == (42,) and obs2.dtype == np.float32  # was 40
     assert isinstance(reward, (int, float, np.floating)) and np.isfinite(reward)
     assert isinstance(terminated, bool)
     assert isinstance(truncated, bool)
@@ -47,9 +47,9 @@ def test_obs_no_nan_long_rollout():
     for _ in range(500):
         obs, _, terminated, truncated, _ = env.step(env.action_space.sample())
         assert np.all(np.isfinite(obs))
-        for flag in obs[36:39]:
+        for flag in obs[38:41]:  # was obs[36:39]
             assert flag in (0.0, 1.0)
-        assert 0.0 <= obs[39] <= 1.0
+        assert 0.0 <= obs[41] <= 1.0  # was obs[39]
         if terminated or truncated:
             env.reset(seed=0)
     env.close()
@@ -70,15 +70,14 @@ def test_seed_reproducibility():
 
 
 def test_payload_stays_in_cup_at_rest():
-    """Physics sanity: 3 payloads at rest stay in the cup for 100 zero-torque steps."""
     env = gym.make("MugheadWalker-v0")
     obs, _ = env.reset(seed=0)
     for _ in range(100):
         obs, _, terminated, _, _ = env.step(_zero_action())
         if terminated:
-            pytest.fail("walker fell over during rest test — hull/leg geometry may be wrong")
-    np.testing.assert_array_equal(obs[36:39], [1.0, 1.0, 1.0])
-    assert obs[39] == 1.0
+            pytest.fail("walker fell over during rest test")
+    np.testing.assert_array_equal(obs[38:41], [1.0, 1.0, 1.0])  # was obs[36:39]
+    assert obs[41] == 1.0  # was obs[39]
 
 
 def test_hull_fall_terminates():
@@ -96,10 +95,10 @@ def test_all_payloads_lost_no_terminate():
     env.reset(seed=0)
     u = env.unwrapped
     for p in u.payloads:
-        p.position = (u.hull.position[0] + 10.0, u.hull.position[1])
+        p.position = (u.chassis.position[0] + 10.0, u.chassis.position[1])  # was u.hull.position
     obs, _, terminated, *_ = env.step(_zero_action())
     assert not terminated
-    assert obs[39] == 0.0
+    assert obs[41] == 0.0  # was obs[39]
     obs2, _, terminated2, *_ = env.step(_zero_action())
     assert not terminated2
     env.close()
@@ -108,7 +107,7 @@ def test_all_payloads_lost_no_terminate():
 def test_configurable_num_payloads_zero():
     env = gym.make("MugheadWalker-v0", num_payloads=0)
     obs, _ = env.reset(seed=0)
-    np.testing.assert_array_equal(obs[24:40], np.zeros(16, dtype=np.float32))
+    np.testing.assert_array_equal(obs[26:42], np.zeros(16, dtype=np.float32))  # was obs[24:40]
     obs2, reward, *_ = env.step(_zero_action())
     assert reward != -20
     env.close()
@@ -128,7 +127,9 @@ def test_info_dict_has_metrics():
     _, _, _, _, info = env.step(_zero_action())
     assert "payloads_remaining" in info
     assert "distance" in info
+    assert "waist_angle" in info  # NEW
     assert isinstance(info["payloads_remaining"], int)
     assert info["payloads_remaining"] == 3
     assert isinstance(info["distance"], float)
+    assert isinstance(info["waist_angle"], float)
     env.close()
