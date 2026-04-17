@@ -40,6 +40,17 @@ python examples/random_agent.py --episodes 3 --render
 pytest
 ```
 
+### Train a PPO baseline
+
+```bash
+pip install -e '.[rl]'
+python examples/train_ppo.py --timesteps 1000000 --n-envs 8 --tag ppo_baseline
+python examples/evaluate.py --model runs/<run_dir>/model.zip --episodes 10
+python examples/plot_curves.py runs/<run_dir>
+```
+
+Baseline results and difficulty assessment: [`docs/baseline/ppo_baseline_report.md`](docs/baseline/ppo_baseline_report.md).
+
 ## Observation & action space
 
 - **Observation:** 40-dim float32 vector

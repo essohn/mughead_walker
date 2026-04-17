@@ -1,0 +1,9 @@
+{
+  "model": "runs/ppo_baseline_20260418_013739/model.zip",
+  "episodes": 10,
+  "mean_reward": 261.8852090753615,
+  "std_reward": 218.90882934253108,
+  "mean_payloads": 3,
+  "mean_distance": 56.97600212097168,
+  "success_rate": 0.4
+}
