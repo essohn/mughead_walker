@@ -1076,6 +1076,12 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
 
         self.surf = pygame.transform.flip(self.surf, False, True)
 
+        # Waist hinge marker (dark circle at joint anchor, post-flip).
+        anchor_world = self.waist_joint.anchorA
+        sx = anchor_world[0] * SCALE - self.scroll * SCALE
+        sy = VIEWPORT_H - anchor_world[1] * SCALE
+        pygame.draw.circle(self.surf, (40, 40, 40), (int(sx), int(sy)), 3)
+
         # HUD overlay (post-flip — text should read normally).
         if not pygame.font.get_init():
             pygame.font.init()
