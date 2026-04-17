@@ -228,8 +228,39 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
         "render_fps": FPS,
     }
 
-    def __init__(self, render_mode: str | None = None, hardcore: bool = False):
-        EzPickle.__init__(self, render_mode, hardcore)
+    def __init__(
+        self,
+        render_mode: str | None = None,
+        num_payloads: int = DEFAULT_NUM_PAYLOADS,
+        payload_mass_ratio: float = DEFAULT_PAYLOAD_MASS_RATIO,
+        payload_bounciness: float = DEFAULT_PAYLOAD_BOUNCINESS,
+        terrain_difficulty: int = 0,
+        obstacles: bool = False,
+        external_force: float = 0.0,
+    ):
+        EzPickle.__init__(
+            self,
+            render_mode,
+            num_payloads,
+            payload_mass_ratio,
+            payload_bounciness,
+            terrain_difficulty,
+            obstacles,
+            external_force,
+        )
+        if not (0 <= num_payloads <= 3):
+            raise ValueError(f"num_payloads must be in [0, 3], got {num_payloads}")
+        if terrain_difficulty != 0:
+            raise NotImplementedError(
+                "terrain_difficulty>0 is deferred to a future spec"
+            )
+        if obstacles:
+            raise NotImplementedError("obstacles=True is deferred to a future spec")
+        if external_force != 0.0:
+            raise NotImplementedError(
+                "external_force!=0 is deferred to a future spec"
+            )
+
         self.isopen = True
 
         self.world = Box2D.b2World()
@@ -237,8 +268,6 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
         self.hull: Box2D.b2Body | None = None
 
         self.prev_shaping = None
-
-        self.hardcore = hardcore
 
         self.fd_polygon = fixtureDef(
             shape=polygonShape(vertices=[(0, 0), (1, 0), (1, -1), (0, -1)]),
@@ -325,9 +354,9 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
         # ]
         # state += [l.fraction for l in self.lidar]
 
-        self._num_payloads = DEFAULT_NUM_PAYLOADS
-        self._payload_mass_ratio = DEFAULT_PAYLOAD_MASS_RATIO
-        self._payload_bounciness = DEFAULT_PAYLOAD_BOUNCINESS
+        self._num_payloads = num_payloads
+        self._payload_mass_ratio = payload_mass_ratio
+        self._payload_bounciness = payload_bounciness
 
         self.render_mode = render_mode
         self._flash_frames = 0
@@ -594,7 +623,7 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
         self.scroll = 0.0
         self.lidar_render = 0
 
-        self._generate_terrain(self.hardcore)
+        self._generate_terrain(False)
         self._generate_clouds()
 
         init_x = TERRAIN_STEP * TERRAIN_STARTPAD / 2
