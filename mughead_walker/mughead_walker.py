@@ -602,8 +602,8 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
         self.hull = self.world.CreateDynamicBody(
             position=(init_x, init_y), fixtures=_build_mug_fixtures()
         )
-        self.hull.color1 = (127, 51, 229)
-        self.hull.color2 = (76, 76, 127)
+        self.hull.color1 = (240, 235, 220)  # cream / ceramic mug
+        self.hull.color2 = (60, 60, 60)     # outline
         self.hull.ApplyForceToCenter(
             (self.np_random.uniform(-INITIAL_RANDOM, INITIAL_RANDOM), 0), True
         )
@@ -874,11 +874,13 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
                         center=trans * f.shape.pos * SCALE,
                         radius=f.shape.radius * SCALE,
                     )
+                    # Draw color2 as a 1-pixel border outline (preserves color1 fill).
                     pygame.draw.circle(
                         self.surf,
                         color=obj.color2,
                         center=trans * f.shape.pos * SCALE,
                         radius=f.shape.radius * SCALE,
+                        width=1,
                     )
                 else:
                     path = [trans * v * SCALE for v in f.shape.vertices]
@@ -915,6 +917,26 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
         )
 
         self.surf = pygame.transform.flip(self.surf, False, True)
+
+        # HUD overlay (post-flip — text should read normally).
+        if not pygame.font.get_init():
+            pygame.font.init()
+        font = pygame.font.Font(None, 20)
+        remaining = sum(1 for p in self.payloads if p is not None)
+        hud_lines = [
+            f"Payloads: {remaining}/{self._num_payloads}",
+            f"Distance: {self.hull.position[0]:.1f} m",
+        ]
+        for i, line in enumerate(hud_lines):
+            text = font.render(line, True, (0, 0, 0))
+            self.surf.blit(text, (6 + self.scroll * SCALE, 6 + i * 18))
+
+        # Loss flash: semi-transparent red overlay.
+        if self._flash_frames > 0:
+            overlay = pygame.Surface(self.surf.get_size(), pygame.SRCALPHA)
+            overlay.fill((255, 0, 0, 80))
+            self.surf.blit(overlay, (0, 0))
+            self._flash_frames -= 1
 
         if self.render_mode == "human":
             assert self.screen is not None
