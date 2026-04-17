@@ -43,8 +43,28 @@ LIDAR_RANGE = 160 / SCALE
 
 INITIAL_RANDOM = 5
 
-HULL_POLY = [(-30, +9), (+6, +9), (+34, +1), (+34, -8), (-30, -8)]
-LEG_DOWN = -8 / SCALE
+# Mug geometry (unscaled units; Box2D fixtures use values divided by SCALE).
+# See docs/superpowers/specs/2026-04-17-mughead-walker-env-design.md §4.
+MUG_SLAB_HALF = (38.0, 1.5)       # half-width, half-height of bottom slab (76 x 3)
+MUG_SLAB_CENTER = (0.0, -11.0)
+MUG_WALL_HALF = (1.5, 16.0)        # half-width, half-height of walls (3 x 32)
+MUG_LEFT_CENTER = (-36.5, 6.0)
+MUG_RIGHT_CENTER = (36.5, 6.0)
+MUG_SLAB_BOTTOM_Y = -12.5          # unscaled; bottom of slab in hull local frame
+
+# Collision categories.
+CAT_TERRAIN = 0x0001
+CAT_LEG = 0x0020
+CAT_MUG = 0x0080
+CAT_PAYLOAD = 0x0040
+
+# Original BipedalWalker hull had density 5.0 on a ~1.09 m^2 polygon.
+# Target mug mass ≈ 5.4. Total mug fixture area (in m^2) = (76*3 + 2*3*32) / SCALE^2 ≈ 0.467.
+# Default MUG_DENSITY ≈ 11.6 matches the original mass. Exposed for manual tuning.
+MUG_DENSITY = 11.6
+
+# Legs hang from the bottom of the mug slab.
+LEG_DOWN = MUG_SLAB_BOTTOM_Y / SCALE
 LEG_W, LEG_H = 8 / SCALE, 34 / SCALE
 
 VIEWPORT_W = 600
@@ -57,29 +77,40 @@ TERRAIN_GRASS = 10  # low long are grass spots, in steps
 TERRAIN_STARTPAD = 20  # in steps
 FRICTION = 2.5
 
-HULL_FD = fixtureDef(
-    shape=polygonShape(vertices=[(x / SCALE, y / SCALE) for x, y in HULL_POLY]),
-    density=5.0,
-    friction=0.1,
-    categoryBits=0x0020,
-    maskBits=0x001,  # collide only with ground
-    restitution=0.0,
-)  # 0.99 bouncy
+def _mug_fixture(half_size, center, density=MUG_DENSITY):
+    hx, hy = half_size
+    cx, cy = center
+    return fixtureDef(
+        shape=polygonShape(box=(hx / SCALE, hy / SCALE, (cx / SCALE, cy / SCALE), 0.0)),
+        density=density,
+        friction=0.1,
+        categoryBits=CAT_MUG,
+        maskBits=CAT_TERRAIN | CAT_PAYLOAD,
+        restitution=0.0,
+    )
+
+
+def _build_mug_fixtures():
+    return [
+        _mug_fixture(MUG_SLAB_HALF, MUG_SLAB_CENTER),
+        _mug_fixture(MUG_WALL_HALF, MUG_LEFT_CENTER),
+        _mug_fixture(MUG_WALL_HALF, MUG_RIGHT_CENTER),
+    ]
 
 LEG_FD = fixtureDef(
     shape=polygonShape(box=(LEG_W / 2, LEG_H / 2)),
     density=1.0,
     restitution=0.0,
-    categoryBits=0x0020,
-    maskBits=0x001,
+    categoryBits=CAT_LEG,
+    maskBits=CAT_TERRAIN,
 )
 
 LOWER_FD = fixtureDef(
     shape=polygonShape(box=(0.8 * LEG_W / 2, LEG_H / 2)),
     density=1.0,
     restitution=0.0,
-    categoryBits=0x0020,
-    maskBits=0x001,
+    categoryBits=CAT_LEG,
+    maskBits=CAT_TERRAIN,
 )
 
 
@@ -453,7 +484,7 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
         init_x = TERRAIN_STEP * TERRAIN_STARTPAD / 2
         init_y = TERRAIN_HEIGHT + 2 * LEG_H
         self.hull = self.world.CreateDynamicBody(
-            position=(init_x, init_y), fixtures=HULL_FD
+            position=(init_x, init_y), fixtures=_build_mug_fixtures()
         )
         self.hull.color1 = (127, 51, 229)
         self.hull.color2 = (76, 76, 127)
