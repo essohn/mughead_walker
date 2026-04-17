@@ -18,6 +18,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+rl = ["stable-baselines3>=2.5", "torch>=2.0", "tensorboard>=2.15"]
 
 [tool.setuptools.packages.find]
 include = ["mughead_walker*"]

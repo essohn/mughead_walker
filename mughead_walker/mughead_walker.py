@@ -811,8 +811,12 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
 
         if self.render_mode == "human":
             self.render()
+        info = {
+            "payloads_remaining": sum(1 for p in self.payloads if p is not None),
+            "distance": float(pos.x),
+        }
         # truncation=False as the time limit is handled by the `TimeLimit` wrapper added during `make`
-        return np.array(state, dtype=np.float32), float(reward), terminated, False, {}
+        return np.array(state, dtype=np.float32), float(reward), terminated, False, info
 
     def render(self):
         if self.render_mode is None:

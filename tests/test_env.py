@@ -120,3 +120,15 @@ def test_reward_is_python_float():
     _, reward, *_ = env.step(_zero_action())
     assert type(reward) is float, f"reward type must be float, got {type(reward).__name__}"
     env.close()
+
+
+def test_info_dict_has_metrics():
+    env = gym.make("MugheadWalker-v0")
+    env.reset(seed=0)
+    _, _, _, _, info = env.step(_zero_action())
+    assert "payloads_remaining" in info
+    assert "distance" in info
+    assert isinstance(info["payloads_remaining"], int)
+    assert info["payloads_remaining"] == 3
+    assert isinstance(info["distance"], float)
+    env.close()
