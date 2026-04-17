@@ -73,3 +73,17 @@ def test_payload_mass_ratio_override():
     m_b = env_b.unwrapped.payloads[0].mass
     assert m_b > m_a * 2, f"higher ratio should produce heavier payload: {m_a=} {m_b=}"
     env_a.close(); env_b.close()
+
+
+def test_payload_bounciness_out_of_range_rejected():
+    with pytest.raises(ValueError):
+        gym.make("MugheadWalker-v0", payload_bounciness=1.5)
+    with pytest.raises(ValueError):
+        gym.make("MugheadWalker-v0", payload_bounciness=-0.1)
+
+
+def test_payload_mass_ratio_nonpositive_rejected():
+    with pytest.raises(ValueError):
+        gym.make("MugheadWalker-v0", payload_mass_ratio=0.0)
+    with pytest.raises(ValueError):
+        gym.make("MugheadWalker-v0", payload_mass_ratio=-0.05)

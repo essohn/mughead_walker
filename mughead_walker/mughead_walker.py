@@ -158,69 +158,68 @@ class ContactDetector(contactListener):
 class MugheadWalkerEnv(gym.Env, EzPickle):
     """
     ## Description
-    This is a simple 4-joint walker robot environment.
-    There are two versions:
-    - Normal, with slightly uneven terrain.
-    - Hardcore, with ladders, stumps, pitfalls.
 
-    To solve the normal version, you need to get 300 points in 1600 time steps.
-    To solve the hardcore version, you need 300 points in 2000 time steps.
+    MugheadWalker is a BipedalWalker variant built for the Yonsei
+    "Understanding and Applying AI" RL competition. The walker's hull
+    is a U-shaped open-top "mug" that carries 3 free-body circular
+    payloads. Goal: walk forward as far as possible while keeping the
+    payloads in the mug.
 
-    A heuristic is provided for testing. It's also useful to get demonstrations
-    to learn from. To run the heuristic:
-    ```
-    python gymnasium/envs/box2d/bipedal_walker.py
-    ```
+    Forked from ``gymnasium.envs.box2d.bipedal_walker``. MIT licensed.
 
     ## Action Space
-    Actions are motor speed values in the [-1, 1] range for each of the
-    4 joints at both hips and knees.
+
+    4-dim continuous ``[-1, 1]``: hip and knee torque for both legs.
 
     ## Observation Space
-    State consists of hull angle speed, angular velocity, horizontal speed,
-    vertical speed, position of joints and joints angular speed, legs contact
-    with ground, and 10 lidar rangefinder measurements. There are no coordinates
-    in the state vector.
+
+    40-dim ``float32`` vector:
+
+    - ``obs[0:24]``: original BipedalWalker state (hull pose/velocity,
+      4 joint angles and speeds, 2 leg ground-contact flags, 10 LIDAR
+      measurements).
+    - ``obs[24:30]``: 3 × payload hull-local position ``(x, y) / 50``.
+    - ``obs[30:36]``: 3 × payload hull-local velocity ``(vx, vy) / 10``.
+    - ``obs[36:39]``: 3 × ``in_cup`` flag (0.0 or 1.0).
+    - ``obs[39]``: surviving payload count / 3.
+
+    Destroyed payload slots contribute zeros.
 
     ## Rewards
-    Reward is given for moving forward, totaling 300+ points up to the far end.
-    If the robot falls, it gets -100. Applying motor torque costs a small
-    amount of points. A more optimal agent will get a better score.
+
+    Original BipedalWalker shaping (forward progress, angle penalty,
+    motor torque penalty, −100 on hull fall) plus:
+
+    - ``+0.05 × in_cup_count`` every step.
+    - ``−20`` per payload lost.
+
+    Episodes continue when all payloads are lost — a "sprint" strategy
+    is allowed.
 
     ## Starting State
-    The walker starts standing at the left end of the terrain with the hull
-    horizontal, and both legs in the same position with a slight knee angle.
+
+    Walker stands upright at ``x ≈ 6 m``. Three payloads are placed
+    vertically inside the mug with small ``x``-offsets.
 
     ## Episode Termination
-    The episode will terminate if the hull gets in contact with the ground or
-    if the walker exceeds the right end of the terrain length.
+
+    - Hull touches terrain (fall): ``terminated=True``, reward −100.
+    - 1600 steps reached (``TimeLimit`` wrapper): ``truncated=True``.
+    - End of terrain reached: ``terminated=True``.
 
     ## Arguments
 
-    To use the _hardcore_ environment, you need to specify the `hardcore=True`:
+    ::
 
-    ```python
-    >>> import gymnasium as gym
-    >>> env = gym.make("BipedalWalker-v3", hardcore=True, render_mode="rgb_array")
-    >>> env
-    <TimeLimit<OrderEnforcing<PassiveEnvChecker<BipedalWalker<BipedalWalker-v3>>>>>
-
-    ```
-
-    ## Version History
-    - v3: Returns the closest lidar trace instead of furthest;
-        faster video recording
-    - v2: Count energy spent
-    - v1: Legs now report contact with ground; motors have higher torque and
-        speed; ground has higher friction; lidar rendered less nervously.
-    - v0: Initial version
-
-
-    <!-- ## References -->
-
-    ## Credits
-    Created by Oleg Klimov
-
+        gym.make(
+            "MugheadWalker-v0",
+            num_payloads=3,            # 0-3 supported
+            payload_mass_ratio=0.06,   # hull mass fraction per payload
+            payload_bounciness=0.15,   # restitution (0-1)
+            terrain_difficulty=0,      # only 0 supported now
+            obstacles=False,           # only False supported now
+            external_force=0.0,        # only 0 supported now
+        )
     """
 
     metadata = {
@@ -261,6 +260,14 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
         if external_force != 0.0:
             raise NotImplementedError(
                 "external_force!=0 is deferred to a future spec"
+            )
+        if not (0.0 <= payload_bounciness <= 1.0):
+            raise ValueError(
+                f"payload_bounciness must be in [0, 1], got {payload_bounciness}"
+            )
+        if payload_mass_ratio <= 0.0:
+            raise ValueError(
+                f"payload_mass_ratio must be positive, got {payload_mass_ratio}"
             )
 
         self.isopen = True
@@ -688,7 +695,6 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
             self.joints.append(self.world.CreateJoint(rjd))
 
         self._create_payloads()
-        self.drawlist = self.terrain + self.legs + [self.hull] + self.payloads
 
         class LidarCallback(Box2D.b2.rayCastCallback):
             def ReportFixture(self, fixture, point, normal, fraction):
@@ -806,7 +812,7 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
         if self.render_mode == "human":
             self.render()
         # truncation=False as the time limit is handled by the `TimeLimit` wrapper added during `make`
-        return np.array(state, dtype=np.float32), reward, terminated, False, {}
+        return np.array(state, dtype=np.float32), float(reward), terminated, False, {}
 
     def render(self):
         if self.render_mode is None:
@@ -895,7 +901,7 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
                     width=1,
                 )
 
-        for obj in self.drawlist:
+        for obj in self.terrain + self.legs + [self.hull] + [p for p in self.payloads if p is not None]:
             for f in obj.fixtures:
                 trans = f.body.transform
                 if type(f.shape) is circleShape:
@@ -987,3 +993,5 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
             pygame.display.quit()
             pygame.quit()
             self.isopen = False
+            self.screen = None
+            self.clock = None

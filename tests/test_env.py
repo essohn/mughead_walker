@@ -112,3 +112,11 @@ def test_configurable_num_payloads_zero():
     obs2, reward, *_ = env.step(_zero_action())
     assert reward != -20
     env.close()
+
+
+def test_reward_is_python_float():
+    env = gym.make("MugheadWalker-v0")
+    env.reset(seed=0)
+    _, reward, *_ = env.step(_zero_action())
+    assert type(reward) is float, f"reward type must be float, got {type(reward).__name__}"
+    env.close()

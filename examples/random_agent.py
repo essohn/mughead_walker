@@ -31,7 +31,6 @@ def main():
             if terminated or truncated:
                 break
         remaining = int(round(obs[39] * 3))
-        dist = obs[39]  # not distance; fetch from env for accuracy below
         print(
             f"episode {ep}: steps={steps} "
             f"reward={total_r:.1f} "
