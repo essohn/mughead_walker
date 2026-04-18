@@ -35,7 +35,7 @@ def main():
             f"episode {ep}: steps={steps} "
             f"reward={total_r:.1f} "
             f"surviving_payloads={remaining}/3 "
-            f"hull_x={env.unwrapped.hull.position[0]:.1f}m"
+            f"hull_x={env.unwrapped.chassis.position[0]:.1f}m"
         )
 
     env.close()
