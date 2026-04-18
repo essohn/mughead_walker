@@ -1,8 +1,12 @@
 # MugheadWalker-v0
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/essohn/mughead_walker/blob/main/notebooks/mughead_walker_colab.ipynb)
+
 Gymnasium environment where a BipedalWalker carries a mug full of payloads.
 Forked from `gymnasium.envs.box2d.bipedal_walker`. Built for the Yonsei
 "Understanding and Applying AI" RL competition.
+
+Quickest way to try it: click the **Open In Colab** badge above — install, train a small PPO, watch the agent, all in your browser.
 
 ## Install
 
