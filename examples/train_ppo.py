@@ -156,7 +156,7 @@ def main():
         ),
     ]
 
-    model.learn(total_timesteps=args.timesteps, callback=callbacks, progress_bar=False)
+    model.learn(total_timesteps=args.timesteps, callback=callbacks, progress_bar=True)
     model.save(run_dir / "model.zip")
     eval_vec.close()
     vec.close()
