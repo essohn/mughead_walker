@@ -17,15 +17,18 @@ from pathlib import Path
 
 import gymnasium as gym
 import numpy as np
-from stable_baselines3 import PPO
+from stable_baselines3 import PPO, SAC, TD3, A2C
+
+ALGOS = {"ppo": PPO, "sac": SAC, "td3": TD3, "a2c": A2C}
 
 import mughead_walker  # noqa: F401
 
 
-def evaluate(model_path: str, episodes: int, render: bool, seed: int, out_path: str | None):
+def evaluate(model_path: str, episodes: int, render: bool, seed: int, out_path: str | None, terrain_difficulty: int = 0, algo: str = "ppo"):
     render_mode = "human" if render else None
-    env = gym.make("MugheadWalker-v0", render_mode=render_mode)
-    model = PPO.load(model_path, device="cpu")
+    env = gym.make("MugheadWalker-v0", render_mode=render_mode, terrain_difficulty=terrain_difficulty)
+    algo_cls = ALGOS[algo.lower()]
+    model = algo_cls.load(model_path, device="cpu")
 
     rewards: list[float] = []
     payloads: list[int] = []
@@ -81,8 +84,13 @@ def main():
     parser.add_argument("--render", action="store_true")
     parser.add_argument("--out", type=str, default=None,
                         help="Optional JSON output path for summary metrics.")
+    parser.add_argument("--terrain-difficulty", type=int, default=0,
+                        help="0=flat, 1=hardcore (stumps/pits/stairs)")
+    parser.add_argument("--algo", type=str, default="ppo",
+                        choices=list(ALGOS.keys()),
+                        help="Algorithm used to train the model")
     args = parser.parse_args()
-    evaluate(args.model, args.episodes, args.render, args.seed, args.out)
+    evaluate(args.model, args.episodes, args.render, args.seed, args.out, args.terrain_difficulty, args.algo)
 
 
 if __name__ == "__main__":

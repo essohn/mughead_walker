@@ -12,11 +12,14 @@ def main():
     ap.add_argument("--episodes", type=int, default=5)
     ap.add_argument("--render", action="store_true", help="show pygame window")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--terrain-difficulty", type=int, default=0,
+                    help="0=flat, 1=hardcore (stumps/pits/stairs)")
     args = ap.parse_args()
 
     env = gym.make(
         "MugheadWalker-v0",
         render_mode="human" if args.render else None,
+        terrain_difficulty=args.terrain_difficulty,
     )
 
     for ep in range(args.episodes):

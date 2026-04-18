@@ -252,10 +252,7 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
             raise TypeError(f"num_payloads must be an int, got {type(num_payloads).__name__}")
         if not (0 <= num_payloads <= 3):
             raise ValueError(f"num_payloads must be in [0, 3], got {num_payloads}")
-        if terrain_difficulty != 0:
-            raise NotImplementedError(
-                "terrain_difficulty>0 is deferred to a future spec"
-            )
+        self.hardcore = terrain_difficulty > 0
         if obstacles:
             raise NotImplementedError("obstacles=True is deferred to a future spec")
         if external_force != 0.0:
@@ -741,7 +738,7 @@ class MugheadWalkerEnv(gym.Env, EzPickle):
         self.scroll = 0.0
         self.lidar_render = 0
 
-        self._generate_terrain(False)
+        self._generate_terrain(self.hardcore)
         self._generate_clouds()
 
         # Create chassis first (legs attach to it), then mug above it, then waist joint.
