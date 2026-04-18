@@ -22,7 +22,7 @@ from pathlib import Path
 import gymnasium as gym
 import numpy as np
 from stable_baselines3 import PPO, SAC, TD3, A2C
-from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback
+from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback, EvalCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
 
@@ -97,6 +97,10 @@ def main():
     parser.add_argument("--tag", type=str, default="")
     parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--checkpoint-every", type=int, default=100_000)
+    parser.add_argument("--eval-every", type=int, default=50_000,
+                        help="Evaluate every N steps and save best model")
+    parser.add_argument("--eval-episodes", type=int, default=10,
+                        help="Number of episodes per evaluation")
     parser.add_argument("--dummy-vec", action="store_true",
                         help="Use DummyVecEnv instead of SubprocVecEnv (for debugging).")
     parser.add_argument("--terrain-difficulty", type=int, default=0,
@@ -132,6 +136,9 @@ def main():
         tensorboard_log=str(run_dir / "tb"),
     )
 
+    # Separate eval env (always single, DummyVecEnv)
+    eval_vec = DummyVecEnv([make_env(0, args.seed + 1000, args.terrain_difficulty)])
+
     callbacks = [
         EpisodeMetricsCallback(window=100),
         CheckpointCallback(
@@ -139,10 +146,19 @@ def main():
             save_path=str(run_dir / "checkpoints"),
             name_prefix=algo_name,
         ),
+        EvalCallback(
+            eval_vec,
+            best_model_save_path=str(run_dir),
+            log_path=str(run_dir / "eval_logs"),
+            eval_freq=max(1, args.eval_every // args.n_envs),
+            n_eval_episodes=args.eval_episodes,
+            deterministic=True,
+        ),
     ]
 
     model.learn(total_timesteps=args.timesteps, callback=callbacks, progress_bar=False)
     model.save(run_dir / "model.zip")
+    eval_vec.close()
     vec.close()
     print(f"\n Training complete. Run dir: {run_dir}")
 
