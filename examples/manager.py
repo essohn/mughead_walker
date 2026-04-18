@@ -64,6 +64,7 @@ def discover_runs() -> list[dict]:
         config_path = d / "config.json"
         config = json.loads(config_path.read_text()) if config_path.exists() else {}
         final_model = d / "model.zip"
+        best_model = d / "best_model.zip"
         checkpoints = sorted(
             (d / "checkpoints").glob("*.zip")
         ) if (d / "checkpoints").exists() else []
@@ -74,6 +75,7 @@ def discover_runs() -> list[dict]:
             "path": d,
             "config": config,
             "final_model": final_model if final_model.exists() else None,
+            "best_model": best_model if best_model.exists() else None,
             "checkpoints": checkpoints,
             "has_tb": has_tb,
             "has_curves": has_curves,
@@ -86,14 +88,16 @@ def pick_run(runs: list[dict], prompt_msg: str = "실행 선택") -> dict | None
     if not runs:
         print("  저장된 실행이 없습니다.")
         return None
-    print(f"\n{'#':>3}  {'실행 이름':<45} {'Timesteps':>10}  {'모델':>5}  {'체크':>4}  {'TB':>3}")
-    print("-" * 85)
+    print(f"\n{'#':>3}  {'실행 이름':<40} {'알고리즘':>6} {'Timesteps':>10}  {'Best':>4}  {'모델':>4}  {'체크':>4}  {'TB':>3}")
+    print("-" * 90)
     for i, r in enumerate(runs, 1):
         ts = r["config"].get("timesteps", "?")
+        algo = r["config"].get("algo", "ppo").upper()
+        best_mark = "O" if r.get("best_model") else "-"
         model_mark = "O" if r["final_model"] else "-"
         ckpt_count = len(r["checkpoints"])
         tb_mark = "O" if r["has_tb"] else "-"
-        print(f"{i:>3}  {r['name']:<45} {ts:>10}  {model_mark:>5}  {ckpt_count:>4}  {tb_mark:>3}")
+        print(f"{i:>3}  {r['name']:<40} {algo:>6} {ts:>10}  {best_mark:>4}  {model_mark:>4}  {ckpt_count:>4}  {tb_mark:>3}")
     print(f"  0  <- 뒤로가기")
     while True:
         raw = input(f"\n{prompt_msg} [0-{len(runs)}]: ").strip()
@@ -112,6 +116,8 @@ def pick_run(runs: list[dict], prompt_msg: str = "실행 선택") -> dict | None
 def pick_model(run: dict) -> Path | None:
     """Let user pick a specific model (final or checkpoint) from a run."""
     options: list[tuple[str, Path]] = []
+    if run.get("best_model"):
+        options.append(("*** BEST 모델 (best_model.zip) ***", run["best_model"]))
     if run["final_model"]:
         options.append(("최종 모델 (model.zip)", run["final_model"]))
     for ckpt in run["checkpoints"]:
@@ -204,11 +210,9 @@ def action_evaluate():
     if model_path is None:
         return
 
-    # Auto-detect algo from config.json, fall back to ppo
-    saved_algo = run["config"].get("algo", "ppo")
+    algo = run["config"].get("algo", "ppo")
     print(f"\n  선택된 모델: {model_path}")
-    print(f"  감지된 알고리즘: {saved_algo}")
-    algo = prompt_str("  알고리즘 (ppo/sac/td3/a2c)", saved_algo).lower()
+    print(f"  알고리즘: {algo.upper()}")
     episodes = prompt_int("  평가 에피소드 수", 10)
     seed = prompt_int("  시드", 1000)
     terrain = prompt_int("  지형 난이도 (0=평지, 1=하드코어)", 0)
