@@ -58,7 +58,7 @@ def discover_runs() -> list[dict]:
     if not RUNS_DIR.exists():
         return []
     runs = []
-    for d in sorted(RUNS_DIR.iterdir(), reverse=True):
+    for d in sorted(RUNS_DIR.iterdir(), key=lambda d: d.stat().st_mtime, reverse=True):
         if not d.is_dir():
             continue
         config_path = d / "config.json"
