@@ -120,7 +120,8 @@ def pick_model(run: dict) -> Path | None:
         options.append(("*** BEST 모델 (best_model.zip) ***", run["best_model"]))
     if run["final_model"]:
         options.append(("최종 모델 (model.zip)", run["final_model"]))
-    for ckpt in run["checkpoints"]:
+    # newest checkpoint first
+    for ckpt in sorted(run["checkpoints"], key=lambda p: int(m.group(1)) if (m := re.search(r"(\d+)_steps", p.name)) else 0, reverse=True):
         match = re.search(r"(\d+)_steps", ckpt.name)
         step_label = f"{int(match.group(1)):,} steps" if match else ckpt.name
         options.append((f"체크포인트: {step_label}", ckpt))
@@ -129,7 +130,7 @@ def pick_model(run: dict) -> Path | None:
         print("  이 실행에 사용 가능한 모델이 없습니다.")
         return None
 
-    print(f"\n  모델 목록 ({run['name']}):")
+    print(f"\n  모델 목록 ({run['name']}) — 최신 순:")
     for i, (label, _) in enumerate(options, 1):
         print(f"    {i:>3}. {label}")
     print(f"      0. <- 뒤로가기")
@@ -189,6 +190,61 @@ def action_train():
     print(f"  {' '.join(cmd)}\n")
 
     if not prompt_bool("  학습을 시작할까요?", True):
+        return
+
+    subprocess.run(cmd)
+    pause()
+
+
+def action_finetune():
+    """Fine-tune an existing model."""
+    print("\n" + "=" * 60)
+    print("  파인튜닝 (기존 모델에서 이어 학습)")
+    print("=" * 60)
+
+    runs = discover_runs()
+    print("\n  베이스 모델을 선택하세요 (최신 순):")
+    run = pick_run(runs, "베이스 실행 선택")
+    if run is None:
+        return
+
+    model_path = pick_model(run)
+    if model_path is None:
+        return
+
+    algo = run["config"].get("algo", "ppo")
+    src_terrain = run["config"].get("terrain_difficulty", 0)
+    print(f"\n  선택된 베이스 모델 : {model_path}")
+    print(f"  알고리즘           : {algo.upper()}")
+    print(f"  원본 지형 난이도   : {src_terrain}")
+
+    print("\n  --- 파인튜닝 설정 ---")
+    timesteps   = prompt_int("  추가 타임스텝", 1_000_000)
+    terrain     = prompt_int("  지형 난이도 (0=평지, 1=하드코어)", 1)
+    n_envs      = prompt_int("  병렬 환경 수", run["config"].get("n_envs", 8))
+    seed        = prompt_int("  시드", run["config"].get("seed", 0))
+    default_tag = f"{algo}_ft_terrain{terrain}"
+    tag         = prompt_str("  태그 (실행 이름 접두사)", default_tag)
+    device      = prompt_str("  디바이스 (cpu/cuda/mps)", run["config"].get("device", "cpu"))
+    ckpt_every  = prompt_int("  체크포인트 간격 (steps)", 100_000)
+
+    cmd = [
+        sys.executable, str(EXAMPLES_DIR / "train_ppo.py"),
+        "--algo", algo,
+        "--load-checkpoint", str(model_path),
+        "--timesteps", str(timesteps),
+        "--n-envs", str(n_envs),
+        "--seed", str(seed),
+        "--tag", tag,
+        "--device", device,
+        "--checkpoint-every", str(ckpt_every),
+        "--terrain-difficulty", str(terrain),
+    ]
+
+    print(f"\n  실행 명령어:")
+    print(f"  {' '.join(cmd)}\n")
+
+    if not prompt_bool("  파인튜닝을 시작할까요?", True):
         return
 
     subprocess.run(cmd)
@@ -379,12 +435,13 @@ def action_random_agent():
 # ---------------------------------------------------------------------------
 
 MENU = [
-    ("1", "모델 학습 (PPO/SAC/TD3/A2C)", action_train),
-    ("2", "모델 평가", action_evaluate),
-    ("3", "학습 곡선 플롯", action_plot),
-    ("4", "실행 목록/상세 보기", action_browse),
-    ("5", "TensorBoard 실행", action_tensorboard),
-    ("6", "랜덤 에이전트 (시각 확인)", action_random_agent),
+    ("1", "모델 학습 (새로 시작)", action_train),
+    ("2", "파인튜닝 (기존 모델에서 이어 학습)", action_finetune),
+    ("3", "모델 평가", action_evaluate),
+    ("4", "학습 곡선 플롯", action_plot),
+    ("5", "실행 목록/상세 보기", action_browse),
+    ("6", "TensorBoard 실행", action_tensorboard),
+    ("7", "랜덤 에이전트 (시각 확인)", action_random_agent),
     ("q", "종료", None),
 ]
 
