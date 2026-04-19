@@ -23,17 +23,18 @@ EXAMPLES_DIR = Path("examples")
 
 
 def relative_time(mtime: float) -> str:
-    """Return a human-readable relative time string (e.g. '3분 전', '2시간 전')."""
-    delta = datetime.datetime.now().timestamp() - mtime
+    """Return a compact relative time string, e.g. '3h 13m ago', '14d 3h 1m ago'."""
+    delta = int(datetime.datetime.now().timestamp() - mtime)
     if delta < 60:
-        return "방금 전"
-    if delta < 3600:
-        return f"{int(delta // 60)}분 전"
-    if delta < 86400:
-        return f"{int(delta // 3600)}시간 전"
-    if delta < 86400 * 7:
-        return f"{int(delta // 86400)}일 전"
-    return datetime.datetime.fromtimestamp(mtime).strftime("%m/%d %H:%M")
+        return "just now"
+    minutes, _ = divmod(delta, 60)
+    hours, minutes = divmod(minutes, 60)
+    days, hours = divmod(hours, 24)
+    if days > 0:
+        return f"{days}d {hours}h {minutes}m ago"
+    if hours > 0:
+        return f"{hours}h {minutes}m ago"
+    return f"{minutes}m ago"
 
 
 def pause():
@@ -104,8 +105,8 @@ def pick_run(runs: list[dict], prompt_msg: str = "실행 선택") -> dict | None
     if not runs:
         print("  저장된 실행이 없습니다.")
         return None
-    print(f"\n{'#':>3}  {'얼마 전':<12} {'실행 이름':<38} {'알고'}  {'Timesteps':>12}  {'Best':>4}  {'모델':>4}  {'체크':>4}  {'TB':>3}")
-    print("-" * 100)
+    print(f"\n{'#':>3}  {'실행 이름':<38} {'얼마 전':<15} {'알고'}  {'Timesteps':>12}  {'Best':>4}  {'모델':>4}  {'체크':>4}  {'TB':>3}")
+    print("-" * 105)
     for i, r in enumerate(runs, 1):
         raw_ts = r["config"].get("timesteps", "")
         ts_str = f"{raw_ts:,}" if isinstance(raw_ts, int) else str(raw_ts)
@@ -115,7 +116,7 @@ def pick_run(runs: list[dict], prompt_msg: str = "실행 선택") -> dict | None
         ckpt_count = len(r["checkpoints"])
         tb_mark = "O" if r["has_tb"] else "-"
         age = relative_time(r["mtime"])
-        print(f"{i:>3}  {age:<12} {r['name']:<38} {algo:<4}  {ts_str:>12}  {best_mark:>4}  {model_mark:>4}  {ckpt_count:>4}  {tb_mark:>3}")
+        print(f"{i:>3}  {r['name']:<38} {age:<15} {algo:<4}  {ts_str:>12}  {best_mark:>4}  {model_mark:>4}  {ckpt_count:>4}  {tb_mark:>3}")
     print(f"  0  <- 뒤로가기")
     while True:
         raw = input(f"\n{prompt_msg} [0-{len(runs)}]: ").strip()
