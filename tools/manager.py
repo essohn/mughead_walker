@@ -5,7 +5,7 @@ Menu-based interface for training, evaluation, and plotting.
 Scans `runs/` for saved models and lets you pick interactively.
 
 Usage:
-    python examples/manager.py
+    python tools/manager.py
 """
 import datetime
 import json
@@ -19,7 +19,9 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 RUNS_DIR = Path("runs")
-EXAMPLES_DIR = Path("examples")
+TRAINING_DIR = Path("training")   # train_ppo.py, evaluate.py
+TOOLS_DIR = Path("tools")         # plot_curves.py
+EXAMPLES_DIR = Path("examples")   # random_agent.py
 
 
 def relative_time(mtime: float) -> str:
@@ -192,7 +194,7 @@ def action_train():
     dummy = prompt_bool("  DummyVecEnv 사용 (디버그용)?", False)
 
     cmd = [
-        sys.executable, str(EXAMPLES_DIR / "train_ppo.py"),
+        sys.executable, str(TRAINING_DIR / "train_ppo.py"),
         "--algo", algo,
         "--timesteps", str(timesteps),
         "--n-envs", str(n_envs),
@@ -248,7 +250,7 @@ def action_finetune():
     ckpt_every  = prompt_int("  체크포인트 간격 (steps)", 100_000)
 
     cmd = [
-        sys.executable, str(EXAMPLES_DIR / "train_ppo.py"),
+        sys.executable, str(TRAINING_DIR / "train_ppo.py"),
         "--algo", algo,
         "--load-checkpoint", str(model_path),
         "--timesteps", str(timesteps),
@@ -300,7 +302,7 @@ def action_evaluate():
         out_path = prompt_str("  JSON 저장 경로", default_out)
 
     cmd = [
-        sys.executable, str(EXAMPLES_DIR / "evaluate.py"),
+        sys.executable, str(TRAINING_DIR / "evaluate.py"),
         "--model", str(model_path),
         "--algo", algo,
         "--episodes", str(episodes),
@@ -336,7 +338,7 @@ def action_plot():
     if run is None:
         return
 
-    cmd = [sys.executable, str(EXAMPLES_DIR / "plot_curves.py"), str(run["path"])]
+    cmd = [sys.executable, str(TOOLS_DIR / "plot_curves.py"), str(run["path"])]
 
     print(f"\n  실행 명령어:")
     print(f"  {' '.join(cmd)}\n")
