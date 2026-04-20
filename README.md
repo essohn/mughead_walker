@@ -48,9 +48,9 @@ pytest
 
 ```bash
 pip install -e '.[rl]'
-python examples/train_ppo.py --timesteps 1000000 --n-envs 8 --tag ppo_baseline
-python examples/evaluate.py --model runs/<run_dir>/model.zip --episodes 10
-python examples/plot_curves.py runs/<run_dir>
+./scripts/train.sh ppo_baseline                   # defaults: 1M timesteps, 8 envs
+./scripts/play.sh runs/<run_dir>                  # watches 3 episodes rendered
+python tools/plot_curves.py runs/<run_dir>        # or use interactive: python tools/manager.py
 ```
 
 Baseline results and difficulty assessment: [`docs/baseline/ppo_baseline_report.md`](docs/baseline/ppo_baseline_report.md).
