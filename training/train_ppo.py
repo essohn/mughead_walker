@@ -5,14 +5,17 @@ Supports fine-tuning from a checkpoint via --load-checkpoint.
 Use --list-models to browse available checkpoints (newest first).
 
 Usage:
-    # Fresh training
-    python examples/train_ppo.py --algo ppo --timesteps 1000000 --n-envs 8 --tag v1
+    # Fresh training (shell wrapper)
+    ./scripts/train.sh v1
+
+    # Fresh training (direct)
+    python training/train_ppo.py --algo ppo --timesteps 1000000 --n-envs 8 --tag v1
 
     # List saved models
-    python examples/train_ppo.py --list-models
+    python training/train_ppo.py --list-models
 
     # Fine-tune from checkpoint
-    python examples/train_ppo.py \\
+    python training/train_ppo.py \\
         --load-checkpoint runs/ppo_waist_20260418_022338/model.zip \\
         --timesteps 1000000 --terrain-difficulty 1 --tag hardcore_ft
 

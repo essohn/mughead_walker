@@ -1,7 +1,7 @@
 """Extract scalars from TensorBoard logs and save learning curve plots as PNG.
 
 Usage:
-    python examples/plot_curves.py runs/ppo_baseline_20260418_013739
+    python tools/plot_curves.py runs/ppo_baseline_20260418_013739
 """
 import sys
 from pathlib import Path

@@ -1,8 +1,12 @@
 """Evaluate a trained MugheadWalker-v0 policy over N episodes.
 
 Usage:
-    python examples/evaluate.py --model runs/ppo_baseline_20260418_120000/model.zip
-    python examples/evaluate.py --model <path> --episodes 10 --render
+    # Shell wrapper (renders 3 episodes)
+    ./scripts/play.sh runs/ppo_baseline_20260418_120000
+
+    # Direct
+    python training/evaluate.py --model runs/ppo_baseline_20260418_120000/model.zip
+    python training/evaluate.py --model <path> --episodes 10 --render
 
 Reports (per spec §4.2):
     - mean episode reward

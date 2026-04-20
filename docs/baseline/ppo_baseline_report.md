@@ -109,9 +109,9 @@ Recommended next step: re-run 1 M PPO with `mug_inner_width=45` as a quick retes
 
 ```bash
 pip install -e .[rl]
-python examples/train_ppo.py --timesteps 1000000 --n-envs 8 --tag ppo_waist
-python examples/evaluate.py --model runs/<run_dir>/model.zip --episodes 10 --out eval.json
-python examples/plot_curves.py runs/<run_dir>
+./scripts/train.sh ppo_waist                                         # 1M timesteps, 8 envs
+python training/evaluate.py --model runs/<run_dir>/model.zip --episodes 10 --out eval.json
+python tools/plot_curves.py runs/<run_dir>
 ```
 
 TensorBoard:
