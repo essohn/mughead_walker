@@ -10,3 +10,4 @@ dist/
 .idea/
 runs/
 .claude/
+.DS_Store
