@@ -43,6 +43,22 @@ import mughead_walker  # noqa: F401
 ALGOS = {"ppo": PPO, "sac": SAC, "td3": TD3, "a2c": A2C}
 
 
+def _parse_count(value: str) -> int:
+    """Parse step counts like '3M', '30k', '1.5M', '500_000' into int."""
+    s = value.strip().replace("_", "").replace(",", "")
+    if not s:
+        raise argparse.ArgumentTypeError("empty count")
+    suffix_mult = {"k": 1_000, "m": 1_000_000, "g": 1_000_000_000}
+    mult = 1
+    if s[-1].lower() in suffix_mult:
+        mult = suffix_mult[s[-1].lower()]
+        s = s[:-1]
+    try:
+        return int(float(s) * mult)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(f"invalid count: {value!r}") from e
+
+
 # ---------------------------------------------------------------------------
 # Callbacks
 # ---------------------------------------------------------------------------
@@ -177,13 +193,16 @@ def main():
         epilog=__doc__,
     )
     parser.add_argument("--algo", type=str, default="ppo", choices=list(ALGOS.keys()))
-    parser.add_argument("--timesteps", type=int, default=1_000_000)
+    parser.add_argument("--timesteps", type=_parse_count, default=1_000_000,
+                        metavar="N", help="e.g. 1000000, 3M, 1.5m, 30k")
     parser.add_argument("--n-envs", type=int, default=8)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--tag", type=str, default="")
     parser.add_argument("--device", type=str, default="cpu")
-    parser.add_argument("--checkpoint-every", type=int, default=100_000)
-    parser.add_argument("--eval-every", type=int, default=50_000)
+    parser.add_argument("--checkpoint-every", type=_parse_count, default=100_000,
+                        metavar="N", help="e.g. 100000, 100k")
+    parser.add_argument("--eval-every", type=_parse_count, default=50_000,
+                        metavar="N", help="e.g. 50000, 50k")
     parser.add_argument("--eval-episodes", type=int, default=10)
     parser.add_argument("--dummy-vec", action="store_true")
     parser.add_argument("--terrain-difficulty", type=int, default=0,

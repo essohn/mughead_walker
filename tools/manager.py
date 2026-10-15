@@ -43,15 +43,33 @@ def pause():
     input("\n[Enter] 계속...")
 
 
+_INT_SUFFIXES = {"k": 1_000, "m": 1_000_000, "g": 1_000_000_000}
+
+
+def parse_human_int(raw: str) -> int | None:
+    """Parse '1M', '1.5k', '3K', '1_000_000', '1,000,000' into int. None on failure."""
+    s = raw.strip().replace(",", "").replace("_", "")
+    if not s:
+        return None
+    mult = 1
+    if s[-1].lower() in _INT_SUFFIXES:
+        mult = _INT_SUFFIXES[s[-1].lower()]
+        s = s[:-1]
+    try:
+        return int(float(s) * mult)
+    except ValueError:
+        return None
+
+
 def prompt_int(msg: str, default: int) -> int:
-    raw = input(f"{msg} (기본값: {default}): ").strip()
+    raw = input(f"{msg} (기본값: {default:,}): ").strip()
     if not raw:
         return default
-    try:
-        return int(raw)
-    except ValueError:
-        print(f"  잘못된 입력, 기본값 {default} 사용")
+    value = parse_human_int(raw)
+    if value is None:
+        print(f"  잘못된 입력, 기본값 {default:,} 사용")
         return default
+    return value
 
 
 def prompt_str(msg: str, default: str) -> str:
